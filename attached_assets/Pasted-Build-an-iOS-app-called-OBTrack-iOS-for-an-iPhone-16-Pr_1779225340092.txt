@@ -1,0 +1,88 @@
+Build an iOS app called OBTrack iOS for an iPhone 16 Pro Max.
+
+Purpose:
+The app uses ARKit to track the iPhone’s 6DOF position and rotation, then sends that tracking data over UDP to a PC gateway app. The PC gateway will later convert the data to FreeD for Unreal Engine Live Link.
+
+Tech requirements:
+- Swift
+- SwiftUI
+- ARKit
+- Network framework or BSD sockets for UDP
+- Target iOS 18+
+- Must run on physical iPhone, not simulator
+
+App features:
+1. Main screen with:
+   - Start Tracking button
+   - Stop Tracking button
+   - Destination IP field
+   - Destination UDP port field
+   - Send rate selector: 30 fps / 60 fps
+   - Tracking status display
+   - Current position display: x, y, z
+   - Current rotation quaternion display: qx, qy, qz, qw
+
+2. ARKit:
+   - Use ARWorldTrackingConfiguration
+   - Enable world tracking
+   - Read camera transform every frame
+   - Extract position from transform.columns.3
+   - Extract quaternion rotation from camera transform
+   - Detect tracking state: normal, limited, notAvailable
+
+3. UDP packet format:
+Send JSON packets like this:
+
+{
+  "device": "iphone16promax",
+  "timestamp": 123456.789,
+  "frame": 1234,
+  "position": {
+    "x": 0.12,
+    "y": 1.45,
+    "z": -0.83
+  },
+  "rotation": {
+    "qx": 0.0,
+    "qy": 0.2,
+    "qz": 0.0,
+    "qw": 0.98
+  },
+  "trackingState": "normal"
+}
+
+4. Networking:
+   - Send UDP to user-entered IP and port
+   - Default IP: 192.168.1.100
+   - Default port: 5005
+   - Show UDP send status
+   - Do not crash if destination is unreachable
+
+5. Permissions:
+   - Include camera usage permission in Info.plist
+   - Explain the camera is used for AR tracking
+
+6. Code structure:
+   - ContentView.swift
+   - ARTrackingManager.swift
+   - UDPClient.swift
+   - TrackingPacket.swift
+   - OBTrackApp.swift
+
+7. Add comments explaining each major section.
+
+8. Include a simple Python UDP receiver script in a folder called gateway_test:
+   - File name: udp_receiver.py
+   - Listens on UDP port 5005
+   - Prints received JSON packets
+   - Handles malformed packets gracefully
+
+9. Include a README.md with:
+   - How to open/build in Xcode
+   - How to run on iPhone
+   - How to start the Python UDP receiver
+   - How to enter the PC IP address in the app
+   - Notes that this is Phase 1 before FreeD/Unreal integration
+
+Important:
+Make the app simple, stable, and functional first. Do not add Unreal or FreeD conversion yet. This version only needs to prove that the iPhone can send ARKit tracking data over UDP to a PC.

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Camera permission required for ARKit world tracking -->
+	<key>NSCameraUsageDescription</key>
+	<string>OBTrack uses the camera exclusively for ARKit 6DOF position and rotation tracking. No video is recorded or stored. The camera feed is used only to power the AR session that provides real-time tracking data.</string>
+
+	<!-- App Transport Security — allow UDP to local network hosts -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OBTrack sends ARKit tracking data over UDP to a PC on your local network for use with Unreal Engine Live Link.</string>
+
+	<!-- Required for Network.framework local network access (iOS 14+) -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_obtrack._udp</string>
+	</array>
+
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+
+	<key>UILaunchScreen</key>
+	<dict/>
+
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arkit</string>
+		<string>arm64</string>
+	</array>
+</dict>
+</plist>
