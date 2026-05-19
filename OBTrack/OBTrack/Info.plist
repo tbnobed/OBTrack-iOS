@@ -2,20 +2,55 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Camera permission required for ARKit world tracking -->
+	<!-- Required bundle identity keys -->
+	<key>CFBundleIdentifier</key>
+	<string>com.obtrack.ios</string>
+
+	<key>CFBundleName</key>
+	<string>OBTrack</string>
+
+	<key>CFBundleDisplayName</key>
+	<string>OBTrack</string>
+
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+
+	<key>CFBundleSignature</key>
+	<string>????</string>
+
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<key>MinimumOSVersion</key>
+	<string>18.0</string>
+
+	<!-- Camera permission — required for ARKit -->
 	<key>NSCameraUsageDescription</key>
 	<string>OBTrack uses the camera exclusively for ARKit 6DOF position and rotation tracking. No video is recorded or stored. The camera feed is used only to power the AR session that provides real-time tracking data.</string>
 
-	<!-- App Transport Security — allow UDP to local network hosts -->
+	<!-- Local network permission — required for UDP on iOS 14+ -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>OBTrack sends ARKit tracking data over UDP to a PC on your local network for use with Unreal Engine Live Link.</string>
 
-	<!-- Required for Network.framework local network access (iOS 14+) -->
+	<!-- Required by Network.framework for local network access -->
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_obtrack._udp</string>
 	</array>
 
+	<!-- Scene manifest — single-window app -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -25,11 +60,13 @@
 	<key>UILaunchScreen</key>
 	<dict/>
 
+	<!-- Portrait only -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 
+	<!-- ARKit + arm64 required capabilities -->
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arkit</string>
