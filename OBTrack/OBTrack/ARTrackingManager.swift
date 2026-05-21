@@ -7,6 +7,7 @@
 
 import Foundation
 import ARKit
+import UIKit
 import Combine
 
 // MARK: - ARTrackingManager
@@ -78,6 +79,10 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
         udpClient.configure(host: destinationIP, port: destinationPort)
 
+        // Prevent the screen from dimming or locking while tracking is active.
+        // Without this the phone falls asleep and kills ARKit + UDP transmission.
+        UIApplication.shared.isIdleTimerDisabled = true
+
         lastSendTime = 0
         lastDepthTime = 0
         isTracking = true
@@ -89,6 +94,10 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
         guard isTracking else { return }
         session.pause()
         udpClient.close()
+
+        // Re-enable the idle timer so the phone can sleep normally again.
+        UIApplication.shared.isIdleTimerDisabled = false
+
         isTracking = false
         trackingState = "notAvailable"
         udpStatus = "Stopped"
