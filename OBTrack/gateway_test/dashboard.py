@@ -243,7 +243,7 @@ def refresh(_n):
                 else (ORANGE if "limited" in state else RED)
 
     def stat_card(label, value, color=TEXT):
-        return html.Div(card_style(), children=[
+        return html.Div(style=card_style(), children=[
             html.Div(label, style={"fontSize": "10px", "color": MUTED,
                                    "marginBottom": "6px",
                                    "textTransform": "uppercase",

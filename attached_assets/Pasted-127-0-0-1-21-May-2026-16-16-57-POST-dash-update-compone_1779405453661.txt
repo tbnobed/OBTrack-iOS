@@ -1,0 +1,85 @@
+127.0.0.1 - - [21/May/2026 16:16:57] "POST /_dash-update-component HTTP/1.1" 500 -
+[2026-05-21 16:16:59,895] ERROR in app: Exception on /_dash-update-component [POST]
+Traceback (most recent call last):
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_get_app.py", line 17, in wrap
+    return ctx.run(func, self, *args, **kwargs)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/dash.py", line 1601, in dispatch
+    response_data = ctx.run(partial_func)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 720, in add_context
+    raise err
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 711, in add_context
+    output_value = _invoke_callback(func, *func_args, **func_kwargs)  # type: ignore[reportArgumentType]
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 58, in _invoke_callback
+    return func(*args, **kwargs)  # %% callback invoked %%
+  File "/Users/obed/Downloads/OBTrack/gateway_test/dashboard.py", line 257, in refresh
+    stat_card("Tracking State", state,            state_col),
+  File "/Users/obed/Downloads/OBTrack/gateway_test/dashboard.py", line 246, in stat_card
+    return html.Div(card_style(), children=[
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/development/base_component.py", line 482, in wrapper
+    return func(*args, **kwargs)
+TypeError: __init__() got multiple values for argument 'children'
+127.0.0.1 - - [21/May/2026 16:16:59] "POST /_dash-update-component HTTP/1.1" 500 -
+[2026-05-21 16:17:03,820] ERROR in app: Exception on /_dash-update-component [POST]
+Traceback (most recent call last):
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_get_app.py", line 17, in wrap
+    return ctx.run(func, self, *args, **kwargs)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/dash.py", line 1601, in dispatch
+    response_data = ctx.run(partial_func)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 720, in add_context
+    raise err
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 711, in add_context
+    output_value = _invoke_callback(func, *func_args, **func_kwargs)  # type: ignore[reportArgumentType]
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 58, in _invoke_callback
+    return func(*args, **kwargs)  # %% callback invoked %%
+  File "/Users/obed/Downloads/OBTrack/gateway_test/dashboard.py", line 257, in refresh
+    stat_card("Tracking State", state,            state_col),
+  File "/Users/obed/Downloads/OBTrack/gateway_test/dashboard.py", line 246, in stat_card
+    return html.Div(card_style(), children=[
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/development/base_component.py", line 482, in wrapper
+    return func(*args, **kwargs)
+TypeError: __init__() got multiple values for argument 'children'
+127.0.0.1 - - [21/May/2026 16:17:03] "POST /_dash-update-component HTTP/1.1" 500 -
+[2026-05-21 16:17:10,187] ERROR in app: Exception on /_dash-update-component [POST]
+Traceback (most recent call last):
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_get_app.py", line 17, in wrap
+    return ctx.run(func, self, *args, **kwargs)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/dash.py", line 1601, in dispatch
+    response_data = ctx.run(partial_func)
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 720, in add_context
+    raise err
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 711, in add_context
+    output_value = _invoke_callback(func, *func_args, **func_kwargs)  # type: ignore[reportArgumentType]
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/_callback.py", line 58, in _invoke_callback
+    return func(*args, **kwargs)  # %% callback invoked %%
+  File "/Users/obed/Downloads/OBTrack/gateway_test/dashboard.py", line 257, in refresh
+    stat_card("Tracking State", state,            state_col),
+  File "/Users/obed/Downloads/OBTrack/gateway_test/dashboard.py", line 246, in stat_card
+    return html.Div(card_style(), children=[
+  File "/Users/obed/Library/Python/3.9/lib/python/site-packages/dash/development/base_component.py", line 482, in wrapper
+    return func(*args, **kwargs)
+TypeError: __init__() got multiple values for argument 'children'
+127.0.0.1 - - [21/May/2026 16:17:10] "POST /_dash-update-component HTTP/1.1" 500 -
