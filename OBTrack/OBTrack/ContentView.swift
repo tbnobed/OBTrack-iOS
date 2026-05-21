@@ -2,6 +2,8 @@
 // Main screen for OBTrack iOS.
 // Provides controls for starting/stopping AR tracking, configuring the UDP
 // destination, selecting the send rate, and displaying live tracking data.
+// Layout adapts automatically: single column in portrait, two columns in landscape
+// so the phone can be mounted sideways on a camera rig.
 
 import SwiftUI
 import ARKit
@@ -23,30 +25,57 @@ struct ContentView: View {
     /// Selected send rate: 30 or 60 fps
     @State private var sendRate: Int = 30
 
+    // Detect landscape: iPhones report verticalSizeClass = .compact in landscape
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var isLandscape: Bool { verticalSizeClass == .compact }
+
     // MARK: - Body
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
+            Group {
+                if isLandscape {
+                    // ── Landscape: two-column side-by-side layout ──────
+                    // Left: settings + controls  |  Right: status + live data
+                    HStack(alignment: .top, spacing: 12) {
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                settingsCard
+                                controlsCard
+                            }
+                            .padding(.leading)
+                            .padding(.vertical)
+                        }
+                        .frame(maxWidth: .infinity)
 
-                    // ── Connection Settings ────────────────────────────
-                    settingsCard
-
-                    // ── Controls ──────────────────────────────────────
-                    controlsCard
-
-                    // ── Tracking Status ───────────────────────────────
-                    statusCard
-
-                    // ── Live Data ─────────────────────────────────────
-                    liveDataCard
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                statusCard
+                                liveDataCard
+                            }
+                            .padding(.trailing)
+                            .padding(.vertical)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .background(Color(.systemGroupedBackground))
+                } else {
+                    // ── Portrait: single-column stacked layout ─────────
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            settingsCard
+                            controlsCard
+                            statusCard
+                            liveDataCard
+                        }
+                        .padding()
+                    }
+                    .background(Color(.systemGroupedBackground))
                 }
-                .padding()
             }
             .navigationTitle("OBTrack")
-            .navigationBarTitleDisplayMode(.large)
-            .background(Color(.systemGroupedBackground))
+            .navigationBarTitleDisplayMode(.inline)
         }
         .navigationViewStyle(.stack)
     }
