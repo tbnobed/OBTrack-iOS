@@ -1,9 +1,11 @@
 // ContentView.swift
 // Main screen for OBTrack iOS.
-// Provides controls for starting/stopping AR tracking, configuring the UDP
-// destination, selecting the send rate, and displaying live tracking data.
-// Layout adapts automatically: single column in portrait, two columns in landscape
-// so the phone can be mounted sideways on a camera rig.
+//
+// Layout:
+//   • Full-screen ARCameraView showing live camera, feature points, LiDAR mesh, and depth overlay
+//   • Semi-transparent control overlay on top:
+//       Portrait  — top bar + collapsible settings + bottom data/controls panel
+//       Landscape — right sidebar panel (controls) | left camera (full height)
 
 import SwiftUI
 import ARKit
@@ -16,251 +18,354 @@ struct ContentView: View {
 
     @StateObject private var tracker = ARTrackingManager()
 
-    /// Destination IP address for UDP packets
-    @State private var destinationIP: String = "192.168.1.100"
-
-    /// Destination UDP port (as String for TextField binding)
+    @State private var destinationIP: String   = "192.168.1.100"
     @State private var destinationPort: String = "5005"
+    @State private var sendRate: Int           = 30
 
-    /// Selected send rate: 30 or 60 fps
-    @State private var sendRate: Int = 30
+    /// Whether the depth heat-map overlay is active
+    @State private var showDepth: Bool = true
+    /// Whether the LiDAR mesh wireframe is shown
+    @State private var showMesh: Bool  = true
+    /// Whether the settings panel is expanded
+    @State private var showSettings: Bool = true
 
-    // Detect landscape: iPhones report verticalSizeClass = .compact in landscape
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
     // MARK: - Body
 
     var body: some View {
-        NavigationView {
-            Group {
-                if isLandscape {
-                    // ── Landscape: two-column side-by-side layout ──────
-                    // Left: settings + controls  |  Right: status + live data
-                    HStack(alignment: .top, spacing: 12) {
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                settingsCard
-                                controlsCard
-                            }
-                            .padding(.leading)
-                            .padding(.vertical)
-                        }
-                        .frame(maxWidth: .infinity)
-
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                statusCard
-                                liveDataCard
-                            }
-                            .padding(.trailing)
-                            .padding(.vertical)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .background(Color(.systemGroupedBackground))
-                } else {
-                    // ── Portrait: single-column stacked layout ─────────
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            settingsCard
-                            controlsCard
-                            statusCard
-                            liveDataCard
-                        }
-                        .padding()
-                    }
-                    .background(Color(.systemGroupedBackground))
-                }
-            }
-            .navigationTitle("OBTrack")
-            .navigationBarTitleDisplayMode(.inline)
+        if isLandscape {
+            landscapeLayout
+        } else {
+            portraitLayout
         }
-        .navigationViewStyle(.stack)
     }
 
-    // MARK: - Sub-views
+    // MARK: - Layouts
 
-    /// Network destination settings card
-    private var settingsCard: some View {
-        CardView(title: "Network") {
-            VStack(alignment: .leading, spacing: 12) {
+    /// Landscape: camera fills the screen, controls panel on the right
+    private var landscapeLayout: some View {
+        HStack(spacing: 0) {
 
-                LabeledField(label: "Destination IP") {
+            // Camera — fills remaining width
+            cameraLayer
+                .ignoresSafeArea()
+
+            // Right sidebar
+            ScrollView {
+                VStack(spacing: 10) {
+                    settingsPanel
+                    Divider().background(.white.opacity(0.3))
+                    controlButtons
+                    Divider().background(.white.opacity(0.3))
+                    statusPanel
+                    liveDataPanel
+                    visualTogglePanel
+                }
+                .padding(12)
+            }
+            .frame(width: 270)
+            .background(.ultraThinMaterial)
+        }
+    }
+
+    /// Portrait: camera fills the screen, controls are overlaid top and bottom
+    private var portraitLayout: some View {
+        ZStack(alignment: .top) {
+
+            // Camera — full screen background
+            cameraLayer
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+
+                // Top bar — always visible
+                topBar
+                    .background(.ultraThinMaterial)
+
+                // Collapsible settings below the top bar
+                if showSettings {
+                    settingsPanel
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .background(.ultraThinMaterial)
+                }
+
+                Spacer()
+
+                // Bottom panel — status, data, controls
+                VStack(spacing: 10) {
+                    statusPanel
+                    liveDataPanel
+                    visualTogglePanel
+                    controlButtons
+                }
+                .padding(12)
+                .background(.ultraThinMaterial)
+            }
+        }
+    }
+
+    // MARK: - Camera Layer
+
+    private var cameraLayer: some View {
+        Group {
+            if tracker.isTracking {
+                ARCameraView(
+                    session: tracker.session,
+                    depthImage: tracker.depthImage,
+                    showDepth: $showDepth,
+                    showMesh: $showMesh
+                )
+            } else {
+                // Placeholder while session is not running
+                ZStack {
+                    Color.black
+                    VStack(spacing: 16) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.system(size: 64))
+                            .foregroundStyle(.white.opacity(0.4))
+                        Text("Camera starts with tracking")
+                            .foregroundStyle(.white.opacity(0.5))
+                            .font(.callout)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Sub-panels
+
+    /// Top navigation bar (portrait only)
+    private var topBar: some View {
+        HStack {
+            Text("OBTrack")
+                .font(.headline)
+                .foregroundStyle(.white)
+
+            Spacer()
+
+            // Tracking status dot
+            TrackingStateIndicator(state: tracker.trackingState)
+
+            // Settings gear toggle
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSettings.toggle()
+                }
+            } label: {
+                Image(systemName: showSettings ? "chevron.up.circle.fill" : "gearshape.fill")
+                    .foregroundStyle(.white)
+                    .font(.title3)
+            }
+            .padding(.leading, 8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    /// Network destination + send rate settings
+    private var settingsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Network", systemImage: "network")
+                .font(.caption.bold())
+                .foregroundStyle(.white.opacity(0.7))
+
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("IP").font(.caption2).foregroundStyle(.white.opacity(0.6))
                     TextField("192.168.1.100", text: $destinationIP)
+                        .textFieldStyle(.roundedBorder)
                         .keyboardType(.numbersAndPunctuation)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .disabled(tracker.isTracking)
+                        .font(.caption)
                 }
 
-                LabeledField(label: "UDP Port") {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Port").font(.caption2).foregroundStyle(.white.opacity(0.6))
                     TextField("5005", text: $destinationPort)
+                        .textFieldStyle(.roundedBorder)
                         .keyboardType(.numberPad)
                         .disabled(tracker.isTracking)
+                        .font(.caption)
+                        .frame(width: 64)
                 }
 
-                LabeledField(label: "Send Rate") {
-                    Picker("Send Rate", selection: $sendRate) {
-                        Text("30 fps").tag(30)
-                        Text("60 fps").tag(60)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Rate").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                    Picker("Rate", selection: $sendRate) {
+                        Text("30").tag(30)
+                        Text("60").tag(60)
                     }
                     .pickerStyle(.segmented)
                     .disabled(tracker.isTracking)
+                    .frame(width: 80)
                 }
             }
         }
+        .padding(10)
+        .background(.black.opacity(0.35))
+        .cornerRadius(10)
     }
 
-    /// Start / Stop tracking buttons card
-    private var controlsCard: some View {
-        CardView(title: "Controls") {
-            HStack(spacing: 16) {
-
-                // Start Tracking button
-                Button(action: startTracking) {
-                    Label("Start Tracking", systemImage: "dot.radiowaves.left.and.right")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .disabled(tracker.isTracking)
-
-                // Stop Tracking button
-                Button(action: stopTracking) {
-                    Label("Stop Tracking", systemImage: "stop.circle")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(!tracker.isTracking)
+    /// Start / Stop buttons
+    private var controlButtons: some View {
+        HStack(spacing: 10) {
+            Button(action: startTracking) {
+                Label("Start", systemImage: "dot.radiowaves.left.and.right")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .font(.callout.bold())
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .disabled(tracker.isTracking)
+
+            Button(action: stopTracking) {
+                Label("Stop", systemImage: "stop.circle")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .font(.callout.bold())
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .disabled(!tracker.isTracking)
         }
     }
 
-    /// Tracking state and UDP send status card
-    private var statusCard: some View {
-        CardView(title: "Status") {
-            VStack(alignment: .leading, spacing: 8) {
-
-                HStack {
-                    Text("Tracking")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    TrackingStateIndicator(state: tracker.trackingState)
-                }
-
-                HStack {
-                    Text("UDP")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(tracker.udpStatus)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                HStack {
-                    Text("Frames sent")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(tracker.frameCount)")
-                        .font(.system(.caption, design: .monospaced))
-                }
+    /// Tracking state + UDP status
+    private var statusPanel: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Status").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                TrackingStateIndicator(state: tracker.trackingState)
+            }
+            HStack {
+                Text("UDP").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Text(tracker.udpStatus)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(1)
+            }
+            HStack {
+                Text("Frames").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Text("\(tracker.frameCount)")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.8))
             }
         }
+        .padding(10)
+        .background(.black.opacity(0.35))
+        .cornerRadius(10)
     }
 
-    /// Live position and quaternion data card
-    private var liveDataCard: some View {
-        CardView(title: "Live Data") {
-            VStack(alignment: .leading, spacing: 12) {
-
-                // Position display
-                Group {
+    /// Live position + quaternion display
+    private var liveDataPanel: some View {
+        VStack(spacing: 8) {
+            // Position
+            VStack(spacing: 4) {
+                HStack {
                     Text("Position (m)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 16) {
-                        DataField(label: "X", value: tracker.position.x)
-                        DataField(label: "Y", value: tracker.position.y)
-                        DataField(label: "Z", value: tracker.position.z)
-                    }
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Spacer()
                 }
-
-                Divider()
-
-                // Rotation display (quaternion)
-                Group {
-                    Text("Rotation (quaternion)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 12) {
-                        DataField(label: "QX", value: tracker.rotation.qx)
-                        DataField(label: "QY", value: tracker.rotation.qy)
-                        DataField(label: "QZ", value: tracker.rotation.qz)
-                        DataField(label: "QW", value: tracker.rotation.qw)
-                    }
+                HStack(spacing: 8) {
+                    DataField(label: "X", value: tracker.position.x)
+                    DataField(label: "Y", value: tracker.position.y)
+                    DataField(label: "Z", value: tracker.position.z)
+                }
+            }
+            Divider().background(.white.opacity(0.2))
+            // Rotation
+            VStack(spacing: 4) {
+                HStack {
+                    Text("Quaternion")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                }
+                HStack(spacing: 4) {
+                    DataField(label: "QX", value: tracker.rotation.qx)
+                    DataField(label: "QY", value: tracker.rotation.qy)
+                    DataField(label: "QZ", value: tracker.rotation.qz)
+                    DataField(label: "QW", value: tracker.rotation.qw)
                 }
             }
         }
+        .padding(10)
+        .background(.black.opacity(0.35))
+        .cornerRadius(10)
+    }
+
+    /// Toggles for depth heat-map and LiDAR mesh
+    private var visualTogglePanel: some View {
+        HStack(spacing: 10) {
+            Toggle(isOn: $showDepth) {
+                Label("Depth", systemImage: "square.3.layers.3d")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+            }
+            .toggleStyle(.button)
+            .tint(.orange)
+
+            Toggle(isOn: $showMesh) {
+                Label("Mesh", systemImage: "cube.transparent")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+            }
+            .toggleStyle(.button)
+            .tint(.cyan)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Actions
 
     private func startTracking() {
-        // Dismiss keyboard before starting
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
-
         let port = UInt16(destinationPort) ?? 5005
         tracker.sendRate = sendRate
         tracker.startTracking(destinationIP: destinationIP, destinationPort: port)
+        withAnimation { showSettings = false }
     }
 
     private func stopTracking() {
         tracker.stopTracking()
+        withAnimation { showSettings = true }
     }
 }
 
-// MARK: - Reusable Sub-components
+// MARK: - Reusable components
 
-/// A rounded card container with a title header
-struct CardView<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: () -> Content
+/// Coloured dot + label for tracking state
+struct TrackingStateIndicator: View {
+    let state: String
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-            content()
-        }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(12)
+    private var color: Color {
+        if state == "normal" { return .green }
+        if state.hasPrefix("limited") { return .orange }
+        return .red
     }
-}
-
-/// A horizontally-arranged label + content pair
-struct LabeledField<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            content()
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 9, height: 9)
+            Text(state)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(color)
         }
     }
 }
 
-/// Displays a single float value with its axis label
+/// Single numeric readout with an axis label
 struct DataField: View {
     let label: String
     let value: Float
@@ -268,37 +373,14 @@ struct DataField: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(String(format: "%.4f", value))
-                .font(.system(.caption, design: .monospaced))
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.5))
+            Text(String(format: "%.3f", value))
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.white)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.5)
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// Color-coded dot + text showing the ARKit tracking state
-struct TrackingStateIndicator: View {
-    let state: String
-
-    private var color: Color {
-        switch state {
-        case "normal":  return .green
-        case let s where s.hasPrefix("limited"): return .orange
-        default:        return .red
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-            Text(state)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(color)
-        }
     }
 }
