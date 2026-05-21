@@ -173,7 +173,7 @@ app.layout = html.Div(
             style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
                    "gap": "14px", "marginBottom": "14px"},
             children=[
-                html.Div(card_style(), children=[
+                html.Div(style=card_style(), children=[
                     html.P("3D Position Trace",
                            style={"margin": "0 0 6px", "fontSize": "12px",
                                   "color": MUTED, "textTransform": "uppercase",
@@ -181,7 +181,7 @@ app.layout = html.Div(
                     dcc.Graph(id="graph-3d", style={"height": "350px"},
                               config={"displayModeBar": False}),
                 ]),
-                html.Div(card_style(), children=[
+                html.Div(style=card_style(), children=[
                     html.P("Position over Time (metres)",
                            style={"margin": "0 0 6px", "fontSize": "12px",
                                   "color": MUTED, "textTransform": "uppercase",
@@ -193,7 +193,7 @@ app.layout = html.Div(
         ),
 
         # ── Rotation chart ───────────────────────────────────────────────────
-        html.Div(card_style({"marginBottom": "14px"}), children=[
+        html.Div(style=card_style({"marginBottom": "14px"}), children=[
             html.P("Camera Rotation over Time (degrees)",
                    style={"margin": "0 0 6px", "fontSize": "12px",
                           "color": MUTED, "textTransform": "uppercase",
