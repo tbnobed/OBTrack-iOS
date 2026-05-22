@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-freed_bridge.py — OBTrack JSON → FreeD UDP bridge for Unreal Engine.
+freed_bridge.py — OBTrack JSON → FreeD UDP bridge.
 
 Listens for OBTrack JSON packets from the iPhone, converts each one to a
-29-byte FreeD "D1" packet, and forwards it to Unreal Engine's built-in
-Live Link FreeD source.
+29-byte FreeD "D1" packet, and forwards it to any tool that accepts FreeD:
+
+    • Unreal Engine          (Live Link FreeD plugin)
+    • Assimilate LiveFX      (FreeD tracking source)
+    • Any other FreeD-compatible consumer
 
 Quick start:
-    python3 freed_bridge.py
-    python3 freed_bridge.py --ue-host 127.0.0.1 --ue-port 6301
+    python3 freed_bridge.py                              # default → 127.0.0.1:6301
+    python3 freed_bridge.py --preset unreal
+    python3 freed_bridge.py --preset livefx --out-host 192.168.1.50
+    python3 freed_bridge.py --out-host 10.0.0.5 --out-port 6301
 
 Run the dashboard at the same time:
     # terminal 1
@@ -17,9 +22,12 @@ Run the dashboard at the same time:
     python3 dashboard.py --udp-port 5006
 
 Defaults:
-    listen port  : 5005   (matches the iPhone app)
-    UE host:port : 127.0.0.1:6301
-    camera id    : 1
+    listen port      : 5005   (matches the iPhone app)
+    output host:port : 127.0.0.1:6301
+    camera id        : 1
+
+Backwards-compat: `--ue-host` / `--ue-port` are still accepted as aliases
+for `--out-host` / `--out-port`.
 """
 
 import argparse
@@ -201,18 +209,36 @@ def convert_pose(arkit_pos, arkit_quat):
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
+PRESETS = {
+    # name      : (default host,   default port, label printed at startup)
+    "unreal"    : ("127.0.0.1",   6301, "Unreal Engine (Live Link FreeD)"),
+    "livefx"    : ("127.0.0.1",   6301, "Assimilate LiveFX (FreeD source)"),
+    "generic"   : ("127.0.0.1",   6301, "Generic FreeD consumer"),
+}
+
+
 def main():
     p = argparse.ArgumentParser(
-        description="OBTrack JSON → FreeD bridge for Unreal Engine")
+        description="OBTrack JSON → FreeD bridge (Unreal Engine, "
+                    "Assimilate LiveFX, or any FreeD consumer)")
     p.add_argument("--listen-port", type=int,
                    default=int(os.environ.get("OBTRACK_PORT", 5005)),
                    help="UDP port to receive OBTrack JSON (default 5005)")
-    p.add_argument("--ue-host", type=str,
-                   default=os.environ.get("UE_HOST", "127.0.0.1"),
-                   help="Unreal Engine host (default 127.0.0.1)")
-    p.add_argument("--ue-port", type=int,
-                   default=int(os.environ.get("UE_PORT", 6301)),
-                   help="Unreal Engine FreeD port (default 6301)")
+    p.add_argument("--preset", choices=sorted(PRESETS.keys()),
+                   default=os.environ.get("PRESET", "generic"),
+                   help="Target tool preset — sets sensible defaults and "
+                        "labels the output. Override host/port with "
+                        "--out-host/--out-port. (default: generic)")
+    p.add_argument("--out-host", "--ue-host", dest="out_host", type=str,
+                   default=os.environ.get("OUT_HOST",
+                          os.environ.get("UE_HOST")),
+                   help="Destination host for FreeD packets "
+                        "(default: preset value, usually 127.0.0.1)")
+    p.add_argument("--out-port", "--ue-port", dest="out_port", type=int,
+                   default=int(os.environ.get("OUT_PORT",
+                          os.environ.get("UE_PORT", 0))) or None,
+                   help="Destination UDP port for FreeD packets "
+                        "(default: preset value, usually 6301)")
     p.add_argument("--camera-id", type=int,
                    default=int(os.environ.get("CAMERA_ID", 1)),
                    help="FreeD camera ID byte (default 1)")
@@ -222,6 +248,10 @@ def main():
                         "127.0.0.1:<port> so dashboard.py can run "
                         "simultaneously.")
     args = p.parse_args()
+
+    preset_host, preset_port, preset_label = PRESETS[args.preset]
+    out_host = args.out_host or preset_host
+    out_port = args.out_port or preset_port
 
     in_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     in_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -240,8 +270,9 @@ def main():
         fwd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     print("OBTrack → FreeD bridge")
+    print(f"  Target           : {preset_label}")
     print(f"  Listening JSON   : 0.0.0.0:{args.listen_port}")
-    print(f"  Sending FreeD to : {args.ue_host}:{args.ue_port}  "
+    print(f"  Sending FreeD to : {out_host}:{out_port}  "
           f"(camera id={args.camera_id})")
     print(f"  Euler order      : {EULER_ORDER}  "
           f"(signs Y/P/R = {YAW_SIGN}/{PITCH_SIGN}/{ROLL_SIGN})")
@@ -271,7 +302,7 @@ def main():
 
             freed = build_freed_packet(
                 args.camera_id, yaw, pitch, roll, ue_x, ue_y, ue_z)
-            out_sock.sendto(freed, (args.ue_host, args.ue_port))
+            out_sock.sendto(freed, (out_host, out_port))
 
             if fwd_sock:
                 fwd_sock.sendto(data, ("127.0.0.1", args.forward_port))

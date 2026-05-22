@@ -1,5 +1,8 @@
 # OBTrack → Unreal Engine setup
 
+> Using Assimilate LiveFX instead? See **LIVEFX_SETUP.md** — same bridge,
+> different target.
+
 End‑to‑end signal flow:
 
 ```
@@ -19,7 +22,7 @@ CineCameraActor in the level
 
 ```bash
 cd OBTrack/gateway_test
-python3 freed_bridge.py
+python3 freed_bridge.py --preset unreal
 ```
 
 The terminal should print `Listening JSON : 0.0.0.0:5005` and, once the
@@ -41,7 +44,7 @@ python3 dashboard.py --udp-port 5006
 ### Sending to a different machine
 
 ```bash
-python3 freed_bridge.py --ue-host 192.168.1.50 --ue-port 6301
+python3 freed_bridge.py --preset unreal --out-host 192.168.1.50 --out-port 6301
 ```
 
 ## 2. Enable the Live Link FreeD plugin in Unreal
