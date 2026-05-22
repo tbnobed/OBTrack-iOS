@@ -22,6 +22,10 @@ struct ContentView: View {
     @State private var destinationPort: String = "5005"
     @State private var sendRate: Int           = 30
 
+    /// Lite (shooting) mode — disables LiDAR mesh + depth to avoid thermal
+    /// throttling during long takes. Stream pose only.
+    @State private var liteMode: Bool = false
+
     /// Whether the depth heat-map overlay is active
     @State private var showDepth: Bool = true
     /// Whether the LiDAR mesh wireframe is shown
@@ -205,6 +209,21 @@ struct ContentView: View {
                     .frame(width: 80)
                 }
             }
+
+            Toggle(isOn: $liteMode) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Lite (shooting) mode")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                    Text("No mesh, no depth — pose only. Use for long takes.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(.green)
+            .disabled(tracker.isTracking)
+            .padding(.top, 4)
         }
         .padding(10)
         .background(.black.opacity(0.35))
@@ -304,26 +323,30 @@ struct ContentView: View {
         .cornerRadius(10)
     }
 
-    /// Toggles for depth heat-map and LiDAR mesh
+    /// Toggles for depth heat-map and LiDAR mesh.
+    /// Hidden entirely when Lite mode is on — there is nothing to display.
+    @ViewBuilder
     private var visualTogglePanel: some View {
-        HStack(spacing: 10) {
-            Toggle(isOn: $showDepth) {
-                Label("Depth", systemImage: "square.3.layers.3d")
-                    .font(.caption)
-                    .foregroundStyle(.white)
-            }
-            .toggleStyle(.button)
-            .tint(.orange)
+        if !liteMode {
+            HStack(spacing: 10) {
+                Toggle(isOn: $showDepth) {
+                    Label("Depth", systemImage: "square.3.layers.3d")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                }
+                .toggleStyle(.button)
+                .tint(.orange)
 
-            Toggle(isOn: $showMesh) {
-                Label("Mesh", systemImage: "cube.transparent")
-                    .font(.caption)
-                    .foregroundStyle(.white)
+                Toggle(isOn: $showMesh) {
+                    Label("Mesh", systemImage: "cube.transparent")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                }
+                .toggleStyle(.button)
+                .tint(.cyan)
             }
-            .toggleStyle(.button)
-            .tint(.cyan)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Actions
@@ -333,7 +356,9 @@ struct ContentView: View {
                                         to: nil, from: nil, for: nil)
         let port = UInt16(destinationPort) ?? 5005
         tracker.sendRate = sendRate
-        tracker.startTracking(destinationIP: destinationIP, destinationPort: port)
+        tracker.startTracking(destinationIP: destinationIP,
+                              destinationPort: port,
+                              lite: liteMode)
         withAnimation { showSettings = false }
     }
 

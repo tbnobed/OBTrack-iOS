@@ -16,8 +16,19 @@ final class UDPClient {
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "com.obtrack.udp", qos: .userInteractive)
 
-    /// Human-readable status of the last send operation
-    @Published var sendStatus: String = "Idle"
+    /// Human-readable status of the last send operation.
+    /// Only mutated from `queue`. Do NOT read this directly across threads —
+    /// observe changes via `onStatusChange` instead.
+    private(set) var sendStatus: String = "Idle"
+
+    /// Invoked on `queue` every time `sendStatus` changes. Marshal to the
+    /// main thread inside the closure if you bind the value to UI state.
+    var onStatusChange: ((String) -> Void)?
+
+    private func update(status: String) {
+        sendStatus = status
+        onStatusChange?(status)
+    }
 
     // MARK: - Public API
 
@@ -28,7 +39,7 @@ final class UDPClient {
         connection?.cancel()
 
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            sendStatus = "Invalid port"
+            queue.async { [weak self] in self?.update(status: "Invalid port") }
             return
         }
 
@@ -40,15 +51,16 @@ final class UDPClient {
         // Create a UDP connection with no TLS
         connection = NWConnection(to: endpoint, using: .udp)
         connection?.stateUpdateHandler = { [weak self] state in
+            // stateUpdateHandler is invoked on `queue` (set via .start(queue:))
             switch state {
             case .ready:
-                self?.sendStatus = "UDP ready"
+                self?.update(status: "UDP ready")
             case .failed(let error):
                 // Do not crash — log the error and reset
-                self?.sendStatus = "UDP error: \(error.localizedDescription)"
+                self?.update(status: "UDP error: \(error.localizedDescription)")
                 self?.connection?.cancel()
             case .cancelled:
-                self?.sendStatus = "UDP cancelled"
+                self?.update(status: "UDP cancelled")
             default:
                 break
             }
@@ -63,11 +75,12 @@ final class UDPClient {
         guard let connection = connection else { return }
 
         connection.send(content: data, completion: .contentProcessed({ [weak self] error in
+            // Completion runs on `queue` (the connection's queue).
             if let error = error {
                 // Do not crash — UDP delivery is best-effort
-                self?.sendStatus = "Send error: \(error.localizedDescription)"
+                self?.update(status: "Send error: \(error.localizedDescription)")
             } else {
-                self?.sendStatus = "Sent \(data.count) bytes"
+                self?.update(status: "Sent \(data.count) bytes")
             }
         }))
     }
@@ -76,6 +89,6 @@ final class UDPClient {
     func close() {
         connection?.cancel()
         connection = nil
-        sendStatus = "Disconnected"
+        queue.async { [weak self] in self?.update(status: "Disconnected") }
     }
 }

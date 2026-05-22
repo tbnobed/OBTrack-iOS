@@ -29,7 +29,7 @@ struct Rotation: Codable {
 struct TrackingPacket: Codable {
     /// Device identifier string
     var device: String = "iphone16promax"
-    /// Time since app launch in seconds
+    /// ARKit capture time (monotonic; matches `ARFrame.timestamp`). Seconds.
     var timestamp: Double
     /// Monotonically increasing frame counter
     var frame: Int
@@ -42,8 +42,9 @@ struct TrackingPacket: Codable {
 
     // MARK: - Factory helper
 
-    /// Build a TrackingPacket from an ARCamera and a frame counter.
-    static func from(camera: ARCamera, frame: Int) -> TrackingPacket {
+    /// Build a TrackingPacket from an ARCamera, a frame counter, and the ARKit
+    /// capture time of the frame (must be `ARFrame.timestamp`, NOT wall clock).
+    static func from(camera: ARCamera, frame: Int, timestamp: TimeInterval) -> TrackingPacket {
         // Extract position from the 4th column of the transform matrix (translation)
         let t = camera.transform.columns.3
         let pos = Position(x: t.x, y: t.y, z: t.z)
@@ -65,7 +66,7 @@ struct TrackingPacket: Codable {
         }
 
         return TrackingPacket(
-            timestamp: Date().timeIntervalSince1970,
+            timestamp: timestamp,
             frame: frame,
             position: pos,
             rotation: rot,

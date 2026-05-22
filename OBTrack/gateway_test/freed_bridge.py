@@ -31,28 +31,101 @@ import sys
 import time
 
 
+# ===========================================================================
+# Coordinate frame: ARKit → Unreal
+#
+# ARKit world:   +X right,   +Y up,    -Z forward   (right-handed)
+# Unreal world:  +X forward, +Y right, +Z up        (left-handed)
+#
+# A single basis-change matrix M is used for BOTH position and rotation so
+# the two can never drift into different frames.
+#
+#   M = [[ 0, 0,-1],     so that  (ue_x, ue_y, ue_z) = M · (ar_x, ar_y, ar_z)
+#        [ 1, 0, 0],              = (-ar_z, ar_x, ar_y)
+#        [ 0, 1, 0]]
+#
+# For rotations:  R_ue = M · R_arkit · Mᵀ
+# ===========================================================================
+M = [
+    [0.0, 0.0, -1.0],
+    [1.0, 0.0,  0.0],
+    [0.0, 1.0,  0.0],
+]
+
 # ---------------------------------------------------------------------------
-# Math helpers
+# EMPIRICAL CALIBRATION KNOBS — VERIFY IN UNREAL.
+#
+# The Euler extraction order/signs that Unreal's FreeD rotator interprets
+# correctly have NOT been verified for this pipeline. Defaults below are a
+# reasonable starting guess. On set, point the iPhone at a known orientation
+# (e.g. flat on a table, camera facing +X) and flip these constants until the
+# CineCameraActor in Unreal matches what the phone is doing. Do NOT modify
+# the maths in quat_to_R / euler_from_R unless you really know why.
 # ---------------------------------------------------------------------------
-def quat_to_euler_deg(qx, qy, qz, qw):
-    """
-    Convert quaternion to (yaw, pitch, roll) in degrees.
-    Intrinsic Tait–Bryan Y-X-Z order (yaw around Y, pitch around X, roll around Z),
-    which matches the way ARKit's camera transform is normally interpreted.
-    """
-    # pitch (X)
-    sinp = 2.0 * (qw * qx - qy * qz)
-    sinp = max(-1.0, min(1.0, sinp))
-    pitch = math.asin(sinp)
-    # yaw (Y)
-    yaw = math.atan2(2.0 * (qw * qy + qx * qz),
-                     1.0 - 2.0 * (qx * qx + qy * qy))
-    # roll (Z)
-    roll = math.atan2(2.0 * (qw * qz + qx * qy),
-                      1.0 - 2.0 * (qx * qx + qz * qz))
-    return math.degrees(yaw), math.degrees(pitch), math.degrees(roll)
+EULER_ORDER = "ZYX"   # extraction order applied to the UE-basis rotation matrix
+YAW_SIGN    = 1       # pan
+PITCH_SIGN  = 1       # tilt
+ROLL_SIGN   = 1       # roll
 
 
+# ---------------------------------------------------------------------------
+# 3×3 matrix helpers (plain Python — no numpy dependency)
+# ---------------------------------------------------------------------------
+def mat3_mul(A, B):
+    return [
+        [sum(A[i][k] * B[k][j] for k in range(3)) for j in range(3)]
+        for i in range(3)
+    ]
+
+
+def mat3_transpose(A):
+    return [[A[j][i] for j in range(3)] for i in range(3)]
+
+
+def mat3_vec(A, v):
+    return tuple(sum(A[i][k] * v[k] for k in range(3)) for i in range(3))
+
+
+def quat_to_R(qx, qy, qz, qw):
+    """Standard right-handed rotation matrix from a unit quaternion."""
+    xx, yy, zz = qx * qx, qy * qy, qz * qz
+    xy, xz, yz = qx * qy, qx * qz, qy * qz
+    wx, wy, wz = qw * qx, qw * qy, qw * qz
+    return [
+        [1 - 2 * (yy + zz),     2 * (xy - wz),     2 * (xz + wy)],
+        [    2 * (xy + wz), 1 - 2 * (xx + zz),     2 * (yz - wx)],
+        [    2 * (xz - wy),     2 * (yz + wx), 1 - 2 * (xx + yy)],
+    ]
+
+
+def euler_from_R(R, order=EULER_ORDER):
+    """
+    Extract (yaw, pitch, roll) in degrees from a 3×3 rotation matrix.
+
+    Default order ZYX (yaw around Z, pitch around Y, roll around X) is the
+    convention Unreal's FRotator uses. THIS HAS NOT BEEN EMPIRICALLY VERIFIED
+    against Live Link FreeD — if a single axis behaves wrong, flip the
+    corresponding *_SIGN constant at the top of this file rather than touching
+    the formulas below.
+    """
+    if order == "ZYX":
+        sy = -R[2][0]
+        sy = max(-1.0, min(1.0, sy))
+        pitch = math.asin(sy)
+        if abs(R[2][0]) < 0.99999:
+            yaw  = math.atan2(R[1][0], R[0][0])
+            roll = math.atan2(R[2][1], R[2][2])
+        else:
+            # gimbal-lock fallback
+            yaw  = math.atan2(-R[0][1], R[1][1])
+            roll = 0.0
+        return math.degrees(yaw), math.degrees(pitch), math.degrees(roll)
+    raise ValueError(f"Unsupported EULER_ORDER: {order!r}")
+
+
+# ---------------------------------------------------------------------------
+# Bytewise helpers
+# ---------------------------------------------------------------------------
 def pack_int24_be(value):
     """Pack a signed integer into 3 big-endian bytes (two's complement)."""
     v = int(round(value))
@@ -68,20 +141,7 @@ def pack_uint24_be(value):
 
 
 # ---------------------------------------------------------------------------
-# FreeD D1 packet (29 bytes)
-#
-#   [0]      0xD1  message type
-#   [1]      camera id
-#   [2:5]    pan   (yaw)   int24, scale = 32768  units per degree
-#   [5:8]    tilt  (pitch) int24, scale = 32768  units per degree
-#   [8:11]   roll          int24, scale = 32768  units per degree
-#   [11:14]  X position    int24, scale = 64     units per millimetre
-#   [14:17]  Y position    int24, scale = 64     units per millimetre
-#   [17:20]  Z position    int24, scale = 64     units per millimetre
-#   [20:23]  zoom          uint24
-#   [23:26]  focus         uint24
-#   [26:28]  reserved      uint16
-#   [28]     checksum = (0x40 - sum(bytes[0..27])) & 0xFF
+# FreeD D1 packet (29 bytes) — unchanged scaling/checksum
 # ---------------------------------------------------------------------------
 ANGLE_SCALE = 32768.0          # FreeD units per degree
 POS_SCALE_PER_M = 64_000.0     # FreeD units per metre (1 mm = 64 units)
@@ -108,17 +168,34 @@ def build_freed_packet(camera_id, pan_deg, tilt_deg, roll_deg,
 
 
 # ---------------------------------------------------------------------------
-# Coordinate mapping ARKit → Unreal
-#
-# ARKit world:   +X right, +Y up,  -Z forward   (right-handed)
-# Unreal world:  +X forward, +Y right, +Z up    (left-handed)
-#
-# The mapping below is a reasonable default. If the camera moves the wrong
-# way in Unreal you can flip individual axes via the Live Link Controller
-# component on the CineCameraActor (Transform → Use Rotation X / Y / Z).
+# Unified ARKit → Unreal pose conversion
 # ---------------------------------------------------------------------------
-def remap_position(x, y, z):
-    return (-z, x, y)   # (UE_X, UE_Y, UE_Z)
+M_T = mat3_transpose(M)
+
+
+def convert_pose(arkit_pos, arkit_quat):
+    """
+    arkit_pos:  (x, y, z) in metres, ARKit world frame
+    arkit_quat: (qx, qy, qz, qw)
+
+    Returns:
+        (ue_x, ue_y, ue_z, yaw_deg, pitch_deg, roll_deg)
+        — in Unreal's left-handed frame, with calibration signs applied.
+    """
+    # Position: single matrix application
+    ue_x, ue_y, ue_z = mat3_vec(M, arkit_pos)
+
+    # Rotation: same basis change, then extract Euler from R_ue
+    R_ar = quat_to_R(*arkit_quat)
+    R_ue = mat3_mul(mat3_mul(M, R_ar), M_T)
+    yaw_raw, pitch_raw, roll_raw = euler_from_R(R_ue, EULER_ORDER)
+
+    return (
+        ue_x, ue_y, ue_z,
+        YAW_SIGN   * yaw_raw,
+        PITCH_SIGN * pitch_raw,
+        ROLL_SIGN  * roll_raw,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +243,8 @@ def main():
     print(f"  Listening JSON   : 0.0.0.0:{args.listen_port}")
     print(f"  Sending FreeD to : {args.ue_host}:{args.ue_port}  "
           f"(camera id={args.camera_id})")
+    print(f"  Euler order      : {EULER_ORDER}  "
+          f"(signs Y/P/R = {YAW_SIGN}/{PITCH_SIGN}/{ROLL_SIGN})")
     if fwd_sock:
         print(f"  Mirroring JSON to: 127.0.0.1:{args.forward_port}  "
               "(for dashboard.py)")
@@ -185,9 +264,10 @@ def main():
                 print(f"  ! malformed packet: {e}", file=sys.stderr)
                 continue
 
-            yaw, pitch, roll = quat_to_euler_deg(
-                rot["qx"], rot["qy"], rot["qz"], rot["qw"])
-            ue_x, ue_y, ue_z = remap_position(pos["x"], pos["y"], pos["z"])
+            ue_x, ue_y, ue_z, yaw, pitch, roll = convert_pose(
+                (pos["x"], pos["y"], pos["z"]),
+                (rot["qx"], rot["qy"], rot["qz"], rot["qw"]),
+            )
 
             freed = build_freed_packet(
                 args.camera_id, yaw, pitch, roll, ue_x, ue_y, ue_z)

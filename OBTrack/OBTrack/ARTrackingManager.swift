@@ -1,9 +1,10 @@
 // ARTrackingManager.swift
 // Manages the ARKit session for OBTrack.
-// Runs ARWorldTrackingConfiguration with LiDAR mesh reconstruction and depth semantics,
-// reads the camera transform every frame, publishes tracking data to the UI,
-// drives the UDP client at the configured frame rate, and produces a depth heat-map
-// image from the LiDAR depth buffer for display in ARCameraView.
+// Runs ARWorldTrackingConfiguration with optional LiDAR mesh reconstruction and
+// depth semantics, reads the camera transform every frame, publishes tracking
+// data to the UI, drives the UDP client at the configured frame rate, and (when
+// not in Lite mode) produces a depth heat-map image from the LiDAR depth buffer
+// for display in ARCameraView.
 
 import Foundation
 import ARKit
@@ -14,7 +15,7 @@ import Combine
 
 final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
 
-    // MARK: - Published state (observed by ContentView)
+    // MARK: - Published state (observed by ContentView — ALWAYS mutated on main)
 
     @Published var isTracking: Bool = false
     @Published var trackingState: String = "notAvailable"
@@ -23,7 +24,8 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
     @Published var frameCount: Int = 0
     @Published var udpStatus: String = "Idle"
 
-    /// Latest LiDAR depth heat-map image (nil when no depth data available)
+    /// Latest LiDAR depth heat-map image (nil when no depth data available or
+    /// when running in Lite mode).
     @Published var depthImage: UIImage? = nil
 
     // MARK: - Internal
@@ -31,13 +33,22 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
     let session = ARSession()
     private let udpClient = UDPClient()
 
+    /// Dedicated serial queue for the ARSession delegate. Keeping per-frame
+    /// work off the main thread frees SwiftUI to render smoothly.
+    private let sessionQueue = DispatchQueue(label: "com.obtrack.arsession",
+                                             qos: .userInteractive)
+
     /// Desired UDP send rate in frames-per-second (30 or 60)
     var sendRate: Int = 30
     private var sendInterval: TimeInterval { 1.0 / TimeInterval(sendRate) }
+
+    /// Mutated only on `sessionQueue`.
     private var lastSendTime: TimeInterval = 0
+    private var lastDepthTime: TimeInterval = 0
+    private var sendSeq: Int = 0
+    private var liteMode: Bool = false
 
     /// Depth processing runs at 10 fps to avoid CPU overload
-    private var lastDepthTime: TimeInterval = 0
     private let depthInterval: TimeInterval = 1.0 / 10.0
     private let depthQueue = DispatchQueue(label: "com.obtrack.depth", qos: .utility)
 
@@ -52,41 +63,63 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
     override init() {
         super.init()
         session.delegate = self
+        // Move per-frame delegate work OFF the main thread.
+        session.delegateQueue = sessionQueue
+
+        // Bridge UDP client status updates (delivered on its own queue) to the
+        // @Published `udpStatus` on main.
+        udpClient.onStatusChange = { [weak self] status in
+            DispatchQueue.main.async { self?.udpStatus = status }
+        }
     }
 
     // MARK: - Session Control
 
-    /// Start an ARWorldTracking session with LiDAR mesh + depth, and open the UDP socket.
-    func startTracking(destinationIP: String, destinationPort: UInt16) {
+    /// Start an ARWorldTracking session and open the UDP socket.
+    ///
+    /// - Parameter lite: when `true`, skips LiDAR mesh reconstruction, depth
+    ///   frame semantics, and the depth heat-map. Recommended for long shooting
+    ///   takes to avoid thermal throttling on a device whose only job is to
+    ///   stream pose.
+    func startTracking(destinationIP: String,
+                       destinationPort: UInt16,
+                       lite: Bool = false) {
         guard !isTracking else { return }
 
         let config = ARWorldTrackingConfiguration()
         config.worldAlignment = .gravity
         config.isAutoFocusEnabled = true
 
-        // Enable LiDAR mesh reconstruction when the device supports it (iPhone 12 Pro+)
-        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
-            config.sceneReconstruction = .mesh
-        }
-
-        // Enable depth frame semantics for the heat-map overlay
-        if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
-            config.frameSemantics.insert(.smoothedSceneDepth)
-        } else if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
-            config.frameSemantics.insert(.sceneDepth)
+        if !lite {
+            // Enable LiDAR mesh reconstruction when the device supports it (iPhone 12 Pro+)
+            if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+                config.sceneReconstruction = .mesh
+            }
+            // Enable depth frame semantics for the heat-map overlay
+            if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
+                config.frameSemantics.insert(.smoothedSceneDepth)
+            } else if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+                config.frameSemantics.insert(.sceneDepth)
+            }
         }
 
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
         udpClient.configure(host: destinationIP, port: destinationPort)
 
         // Prevent the screen from dimming or locking while tracking is active.
-        // Without this the phone falls asleep and kills ARKit + UDP transmission.
         UIApplication.shared.isIdleTimerDisabled = true
 
-        lastSendTime = 0
-        lastDepthTime = 0
+        // Reset session-queue-owned counters before flipping isTracking.
+        sessionQueue.async { [weak self] in
+            self?.lastSendTime = 0
+            self?.lastDepthTime = 0
+            self?.sendSeq = 0
+            self?.liteMode = lite
+        }
+
         isTracking = true
         trackingState = "limited"
+        depthImage = nil
     }
 
     /// Stop the ARKit session and close the UDP socket.
@@ -95,7 +128,6 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
         session.pause()
         udpClient.close()
 
-        // Re-enable the idle timer so the phone can sleep normally again.
         UIApplication.shared.isIdleTimerDisabled = false
 
         isTracking = false
@@ -104,9 +136,8 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
         depthImage = nil
     }
 
-    // MARK: - ARSessionDelegate
+    // MARK: - ARSessionDelegate (runs on `sessionQueue`)
 
-    /// Called every frame — read tracking data, send UDP, process depth.
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         let camera = frame.camera
 
@@ -133,31 +164,37 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
         let q = simd_quaternion(camera.transform)
         let rot = Rotation(qx: q.imag.x, qy: q.imag.y, qz: q.imag.z, qw: q.real)
 
-        let currentFrame = frameCount + 1
+        // Frame counter lives on the session queue so we never read a
+        // @Published property off-main.
+        sendSeq &+= 1
+        let currentFrame = sendSeq
+        let now = frame.timestamp
 
         // Publish to UI on the main thread
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
             self.trackingState = stateString
             self.position = pos
             self.rotation = rot
             self.frameCount = currentFrame
         }
 
-        // Rate-limited UDP send
-        let now = frame.timestamp
+        // Rate-limited UDP send (uses ARKit capture time, not wall clock)
         if now - lastSendTime >= sendInterval {
             lastSendTime = now
-            let packet = TrackingPacket.from(camera: camera, frame: currentFrame)
+            let packet = TrackingPacket.from(camera: camera,
+                                             frame: currentFrame,
+                                             timestamp: now)
             if let data = packet.toJSONData() {
                 udpClient.send(data)
             }
-            DispatchQueue.main.async { self.udpStatus = self.udpClient.sendStatus }
+            // udpStatus is now bridged via UDPClient.onStatusChange; no direct
+            // cross-thread read of udpClient.sendStatus.
         }
 
-        // Rate-limited depth processing from LiDAR
-        if now - lastDepthTime >= depthInterval {
+        // Rate-limited depth processing from LiDAR (skipped in Lite mode)
+        if !liteMode, now - lastDepthTime >= depthInterval {
             lastDepthTime = now
-            // Prefer smoothed depth (less noise) — fall back to raw depth
             if let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth {
                 let pixelBuffer = depthData.depthMap
                 depthQueue.async { [weak self] in
@@ -170,20 +207,25 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {
-        DispatchQueue.main.async {
-            self.trackingState = "error: \(error.localizedDescription)"
-            self.isTracking = false
+        DispatchQueue.main.async { [weak self] in
+            self?.trackingState = "error: \(error.localizedDescription)"
+            self?.isTracking = false
         }
     }
 
     func sessionWasInterrupted(_ session: ARSession) {
-        DispatchQueue.main.async { self.trackingState = "interrupted" }
+        DispatchQueue.main.async { [weak self] in
+            self?.trackingState = "interrupted"
+        }
     }
 
     func sessionInterruptionEnded(_ session: ARSession) {
         let config = ARWorldTrackingConfiguration()
         config.worldAlignment = .gravity
-        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+        // Re-enable mesh on resume only if not in Lite mode.
+        let isLite = self.liteMode
+        if !isLite,
+           ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
             config.sceneReconstruction = .mesh
         }
         session.run(config, options: [.resetTracking])
@@ -239,11 +281,10 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
                 rgba[i]     = colour.r
                 rgba[i + 1] = colour.g
                 rgba[i + 2] = colour.b
-                rgba[i + 3] = 210  // semi-transparent
+                rgba[i + 3] = 210
             }
         }
 
-        // Wrap in CGContext → CGImage → UIImage
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         return rgba.withUnsafeMutableBytes { ptr in
             guard let ctx = CGContext(
