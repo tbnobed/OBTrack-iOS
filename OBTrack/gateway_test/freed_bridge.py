@@ -71,9 +71,15 @@ M = [
 # the maths in quat_to_R / euler_from_R unless you really know why.
 # ---------------------------------------------------------------------------
 EULER_ORDER = "ZYX"   # extraction order applied to the UE-basis rotation matrix
-YAW_SIGN    = 1       # pan
-PITCH_SIGN  = 1       # tilt
-ROLL_SIGN   = 1       # roll
+YAW_SIGN    =  1      # pan         (verified: left/right correct in Unreal/LiveFX)
+PITCH_SIGN  = -1      # tilt        (verified: was inverted, flipped)
+ROLL_SIGN   =  1      # roll        (unverified — flip if camera leans wrong way)
+
+# Per-axis position sign knobs, applied AFTER the basis change. Use these
+# to fix axis inversions discovered on set without touching the matrix M.
+POS_X_SIGN  =  1      # UE +X = forward
+POS_Y_SIGN  =  1      # UE +Y = right
+POS_Z_SIGN  = -1      # UE +Z = up     (verified: height was inverted, flipped)
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +196,7 @@ def convert_pose(arkit_pos, arkit_quat):
         (ue_x, ue_y, ue_z, yaw_deg, pitch_deg, roll_deg)
         — in Unreal's left-handed frame, with calibration signs applied.
     """
-    # Position: single matrix application
+    # Position: single matrix application, then per-axis calibration signs
     ue_x, ue_y, ue_z = mat3_vec(M, arkit_pos)
 
     # Rotation: same basis change, then extract Euler from R_ue
@@ -199,7 +205,9 @@ def convert_pose(arkit_pos, arkit_quat):
     yaw_raw, pitch_raw, roll_raw = euler_from_R(R_ue, EULER_ORDER)
 
     return (
-        ue_x, ue_y, ue_z,
+        POS_X_SIGN * ue_x,
+        POS_Y_SIGN * ue_y,
+        POS_Z_SIGN * ue_z,
         YAW_SIGN   * yaw_raw,
         PITCH_SIGN * pitch_raw,
         ROLL_SIGN  * roll_raw,
@@ -275,7 +283,9 @@ def main():
     print(f"  Sending FreeD to : {out_host}:{out_port}  "
           f"(camera id={args.camera_id})")
     print(f"  Euler order      : {EULER_ORDER}  "
-          f"(signs Y/P/R = {YAW_SIGN}/{PITCH_SIGN}/{ROLL_SIGN})")
+          f"(rot signs Y/P/R = {YAW_SIGN:+d}/{PITCH_SIGN:+d}/{ROLL_SIGN:+d})")
+    print(f"  Position signs   : X/Y/Z = "
+          f"{POS_X_SIGN:+d}/{POS_Y_SIGN:+d}/{POS_Z_SIGN:+d}")
     if fwd_sock:
         print(f"  Mirroring JSON to: 127.0.0.1:{args.forward_port}  "
               "(for dashboard.py)")
