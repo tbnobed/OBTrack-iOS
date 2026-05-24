@@ -5,4 +5,4 @@ generated = []
 id = "l9p2ekF4hTh5PM_G2y7dc"
 uri = "file://OBTrack_iOS.tar.gz"
 type = "unspecified"
-title = "OBTrack iOS — pitch + height inversion fixed"
+title = "OBTrack iOS — forward/back axis fix"

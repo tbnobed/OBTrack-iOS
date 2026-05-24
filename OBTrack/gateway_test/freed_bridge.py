@@ -40,24 +40,39 @@ import time
 
 
 # ===========================================================================
-# Coordinate frame: ARKit → Unreal
+# Coordinate frames: ARKit → FreeD → Unreal / LiveFX
 #
 # ARKit world:   +X right,   +Y up,    -Z forward   (right-handed)
 # Unreal world:  +X forward, +Y right, +Z up        (left-handed)
 #
-# A single basis-change matrix M is used for BOTH position and rotation so
-# the two can never drift into different frames.
+# FreeD itself is broadcast convention: position fields are X=east (right),
+# Y=north (forward), Z=up; rotation fields are pan around Z, tilt around Y,
+# roll around X. Unreal's Live Link FreeD plugin honours that for position
+# but applies rotation in Unreal's own axes — so position and rotation
+# legitimately use DIFFERENT basis matrices. They are kept side-by-side
+# below so it is impossible to change one without seeing the other.
 #
-#   M = [[ 0, 0,-1],     so that  (ue_x, ue_y, ue_z) = M · (ar_x, ar_y, ar_z)
-#        [ 1, 0, 0],              = (-ar_z, ar_x, ar_y)
-#        [ 0, 1, 0]]
+# P_BASIS — used for POSITION:
+#     FreeD X (right)   ←  ARKit +X
+#     FreeD Y (forward) ←  ARKit -Z
+#     FreeD Z (up)      ←  ARKit +Y
 #
-# For rotations:  R_ue = M · R_arkit · Mᵀ
+# R_BASIS — used for ROTATION:
+#     UE X (forward)    ←  ARKit -Z
+#     UE Y (right)      ←  ARKit +X
+#     UE Z (up)         ←  ARKit +Y
+#   Yaw / pitch / roll are then extracted from R_ue = R_BASIS · R_arkit · R_BASISᵀ.
 # ===========================================================================
-M = [
-    [0.0, 0.0, -1.0],
-    [1.0, 0.0,  0.0],
-    [0.0, 1.0,  0.0],
+P_BASIS = [
+    [1.0, 0.0,  0.0],   # FreeD X (right)   ←  ARKit +X
+    [0.0, 0.0, -1.0],   # FreeD Y (forward) ←  ARKit -Z
+    [0.0, 1.0,  0.0],   # FreeD Z (up)      ←  ARKit +Y
+]
+
+R_BASIS = [
+    [0.0, 0.0, -1.0],   # UE X (forward) ← ARKit -Z
+    [1.0, 0.0,  0.0],   # UE Y (right)   ← ARKit +X
+    [0.0, 1.0,  0.0],   # UE Z (up)      ← ARKit +Y
 ]
 
 # ---------------------------------------------------------------------------
@@ -75,11 +90,11 @@ YAW_SIGN    =  1      # pan         (verified: left/right correct in Unreal/Live
 PITCH_SIGN  = -1      # tilt        (verified: was inverted, flipped)
 ROLL_SIGN   =  1      # roll        (unverified — flip if camera leans wrong way)
 
-# Per-axis position sign knobs, applied AFTER the basis change. Use these
-# to fix axis inversions discovered on set without touching the matrix M.
-POS_X_SIGN  =  1      # UE +X = forward
-POS_Y_SIGN  =  1      # UE +Y = right
-POS_Z_SIGN  = -1      # UE +Z = up     (verified: height was inverted, flipped)
+# Per-axis position sign knobs, applied AFTER P_BASIS. Use these to fix
+# axis inversions discovered on set without touching the matrices.
+POS_X_SIGN  =  1      # FreeD X (right)
+POS_Y_SIGN  =  1      # FreeD Y (forward)
+POS_Z_SIGN  =  1      # FreeD Z (up)     — flip to -1 if camera height is inverted
 
 
 # ---------------------------------------------------------------------------
@@ -182,9 +197,9 @@ def build_freed_packet(camera_id, pan_deg, tilt_deg, roll_deg,
 
 
 # ---------------------------------------------------------------------------
-# Unified ARKit → Unreal pose conversion
+# ARKit → FreeD pose conversion (separate position vs rotation basis)
 # ---------------------------------------------------------------------------
-M_T = mat3_transpose(M)
+R_BASIS_T = mat3_transpose(R_BASIS)
 
 
 def convert_pose(arkit_pos, arkit_quat):
@@ -193,21 +208,22 @@ def convert_pose(arkit_pos, arkit_quat):
     arkit_quat: (qx, qy, qz, qw)
 
     Returns:
-        (ue_x, ue_y, ue_z, yaw_deg, pitch_deg, roll_deg)
-        — in Unreal's left-handed frame, with calibration signs applied.
+        (fx, fy, fz, yaw_deg, pitch_deg, roll_deg)
+        Position fields are FreeD axes (X=right, Y=forward, Z=up); rotation
+        is in Unreal axes. All calibration signs applied.
     """
-    # Position: single matrix application, then per-axis calibration signs
-    ue_x, ue_y, ue_z = mat3_vec(M, arkit_pos)
+    # Position: P_BASIS, then per-axis calibration signs
+    px, py, pz = mat3_vec(P_BASIS, arkit_pos)
 
-    # Rotation: same basis change, then extract Euler from R_ue
+    # Rotation: R_BASIS, extract Euler in R_ue frame
     R_ar = quat_to_R(*arkit_quat)
-    R_ue = mat3_mul(mat3_mul(M, R_ar), M_T)
+    R_ue = mat3_mul(mat3_mul(R_BASIS, R_ar), R_BASIS_T)
     yaw_raw, pitch_raw, roll_raw = euler_from_R(R_ue, EULER_ORDER)
 
     return (
-        POS_X_SIGN * ue_x,
-        POS_Y_SIGN * ue_y,
-        POS_Z_SIGN * ue_z,
+        POS_X_SIGN * px,
+        POS_Y_SIGN * py,
+        POS_Z_SIGN * pz,
         YAW_SIGN   * yaw_raw,
         PITCH_SIGN * pitch_raw,
         ROLL_SIGN  * roll_raw,
