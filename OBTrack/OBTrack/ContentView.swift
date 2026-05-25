@@ -125,14 +125,14 @@ struct ContentView: View {
             } else {
                 // Placeholder while session is not running
                 ZStack {
-                    Color.black
-                    VStack(spacing: 16) {
-                        Image(systemName: "camera.viewfinder")
-                            .font(.system(size: 64))
-                            .foregroundStyle(.white.opacity(0.4))
+                    BrandColor.inkDark
+                    VStack(spacing: 20) {
+                        OBTrackMark(size: 84)
+                        OBTrackLockup(markSize: 26, showTagline: true)
                         Text("Camera starts with tracking")
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(.white.opacity(0.45))
                             .font(.callout)
+                            .padding(.top, 12)
                     }
                 }
             }
@@ -144,9 +144,7 @@ struct ContentView: View {
     /// Top navigation bar (portrait only)
     private var topBar: some View {
         HStack {
-            Text("OBTrack")
-                .font(.headline)
-                .foregroundStyle(.white)
+            OBTrackLockup(markSize: 24)
 
             Spacer()
 

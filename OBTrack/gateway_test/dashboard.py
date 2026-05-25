@@ -121,15 +121,41 @@ def _udp_listener(port: int):
 # ---------------------------------------------------------------------------
 # Theme colours
 # ---------------------------------------------------------------------------
-BG      = "#0f172a"
-CARD    = "#1e293b"
-TEXT    = "#f1f5f9"
-MUTED   = "#64748b"
-GREEN   = "#22c55e"
-BLUE    = "#3b82f6"
-ORANGE  = "#f59e0b"
-RED     = "#ef4444"
-PURPLE  = "#a855f7"
+# OBTrack brand palette (matches the iOS app and identity board)
+BG       = "#0a0f1c"   # ink dark
+CARD     = "#142136"   # ink panel
+TEXT     = "#e8eef6"
+MUTED    = "#64748b"
+ACCENT   = "#38bdf8"   # sky-400 — OBTrack accent
+ACCENT2  = "#2563eb"   # blue-600 — gradient deep end
+GREEN    = "#22c55e"
+BLUE     = ACCENT      # back-compat alias used below
+ORANGE   = "#f59e0b"
+RED      = "#ef4444"
+PURPLE   = "#a855f7"
+
+# Inline SVG of the OBTrack reticle, for the header.
+OBTRACK_RETICLE_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" '
+    'viewBox="0 0 120 120">'
+    '<defs><linearGradient id="ax" x1="0" y1="0" x2="1" y2="1">'
+    f'<stop offset="0" stop-color="{ACCENT}"/>'
+    f'<stop offset="1" stop-color="{ACCENT2}"/>'
+    '</linearGradient></defs>'
+    '<g fill="none" stroke="url(#ax)" stroke-width="8.5" '
+    'stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M34 12 L18.5 12 Q12 12 12 18.5 L12 34"/>'
+    '<path d="M86 12 L101.5 12 Q108 12 108 18.5 L108 34"/>'
+    '<path d="M12 86 L12 101.5 Q12 108 18.5 108 L34 108"/>'
+    '<path d="M108 86 L108 101.5 Q108 108 101.5 108 L86 108"/>'
+    '</g>'
+    f'<circle cx="60" cy="60" r="24" fill="none" stroke="{TEXT}" stroke-width="8.5"/>'
+    f'<circle cx="60" cy="60" r="6" fill="{ACCENT}"/>'
+    '</svg>'
+)
+OBTRACK_RETICLE_DATA_URI = (
+    "data:image/svg+xml;utf8," + OBTRACK_RETICLE_SVG.replace("#", "%23")
+)
 AXIS    = dict(gridcolor="#334155", zerolinecolor="#475569",
                color=TEXT, linecolor="#334155")
 
@@ -152,13 +178,22 @@ app.layout = html.Div(
         # ── Header ──────────────────────────────────────────────────────────
         html.Div(
             style={"display": "flex", "alignItems": "center",
-                   "marginBottom": "14px", "gap": "12px"},
+                   "marginBottom": "18px", "gap": "12px"},
             children=[
-                html.Span("⬤", style={"color": BLUE, "fontSize": "10px"}),
-                html.H1("OBTrack", style={"margin": 0, "fontSize": "22px",
-                                          "fontWeight": "700", "color": BLUE}),
-                html.Span("Real-Time Camera Tracking Dashboard",
-                          style={"color": MUTED, "fontSize": "13px"}),
+                html.Img(src=OBTRACK_RETICLE_DATA_URI,
+                         style={"width": "36px", "height": "36px"}),
+                html.Div(style={"display": "flex", "alignItems": "baseline",
+                                "gap": "10px"}, children=[
+                    html.H1(children=[
+                        html.Span("OB", style={"color": TEXT}),
+                        html.Span("Track", style={"color": ACCENT}),
+                    ], style={"margin": 0, "fontSize": "26px",
+                              "fontWeight": "800", "letterSpacing": "-0.5px"}),
+                    html.Span("6DOF CAMERA TRACKING",
+                              style={"color": MUTED, "fontSize": "11px",
+                                     "letterSpacing": "3px",
+                                     "fontWeight": "600"}),
+                ]),
             ],
         ),
 
