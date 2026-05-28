@@ -12,3 +12,9 @@ id = "RvWQvFaExV3wxVWNvKAvD"
 uri = "file://OBTrack_Gateway.tar.gz"
 type = "unspecified"
 title = "OBTrack Gateway — standalone (Ubuntu server)"
+
+[[outputs]]
+id = "33c2VqGZiQMaGt-UYmVgG"
+uri = "file://OBTrack_Gateway.tar"
+type = "unspecified"
+title = "OBTrack Gateway — uncompressed tar (Ubuntu server)"
