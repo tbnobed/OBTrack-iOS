@@ -379,8 +379,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OBTrack Real-Time Dashboard")
     parser.add_argument("--udp-port", type=int, default=5005,
                         help="UDP port to receive tracking data (default 5005)")
-    parser.add_argument("--web-port", type=int, default=8050,
+    parser.add_argument("--web-port", "--port", type=int, default=8050,
+                        dest="web_port",
                         help="Browser port for the dashboard (default 8050)")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Bind address for the web server. Use 0.0.0.0 "
+                             "to expose the dashboard on the network "
+                             "(default 127.0.0.1).")
     args = parser.parse_args()
 
     UDP_PORT = args.udp_port
@@ -393,7 +398,7 @@ if __name__ == "__main__":
     print(f"\n  ┌─────────────────────────────────────────┐")
     print(f"  │  OBTrack Dashboard                      │")
     print(f"  │  UDP  listening on port {args.udp_port:<5}            │")
-    print(f"  │  Open http://127.0.0.1:{args.web_port} in browser │")
+    print(f"  │  Web  http://{args.host}:{args.web_port}")
     print(f"  └─────────────────────────────────────────┘\n")
 
-    app.run(debug=False, port=args.web_port)
+    app.run(debug=False, host=args.host, port=args.web_port)
