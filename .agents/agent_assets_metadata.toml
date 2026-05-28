@@ -18,3 +18,9 @@ id = "33c2VqGZiQMaGt-UYmVgG"
 uri = "file://OBTrack_Gateway.tar"
 type = "unspecified"
 title = "OBTrack Gateway — uncompressed tar (Ubuntu server)"
+
+[[outputs]]
+id = "4qoNG0YwV_u4MO4ODT6Bd"
+uri = "file://OBTrack_Gateway.zip"
+type = "unspecified"
+title = "OBTrack Gateway — zip (double-click to extract on Mac)"
