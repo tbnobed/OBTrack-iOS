@@ -22,7 +22,7 @@ import argparse
 from collections import deque
 from datetime import datetime
 
-from dash import Dash, dcc, html, Input, Output
+from dash import Dash, dcc, html, Input, Output, State, no_update
 import plotly.graph_objects as go
 
 # ---------------------------------------------------------------------------
@@ -30,6 +30,14 @@ import plotly.graph_objects as go
 # ---------------------------------------------------------------------------
 MAX_HISTORY = 400   # frames kept in memory  (~13 sec at 30 fps)
 UDP_PORT    = 5005
+
+# Bridge control endpoint (matches freed_bridge.py default).
+# Override on the command line with --control-host / --control-port.
+CONTROL_HOST = "127.0.0.1"
+CONTROL_PORT = 5007
+# Reasonable starting values shown in the dashboard text boxes.
+DEFAULT_FREED_HOST = "127.0.0.1"
+DEFAULT_FREED_PORT = 6301
 
 # ---------------------------------------------------------------------------
 # Thread-safe telemetry buffers
@@ -250,9 +258,51 @@ app.layout = html.Div(
                       config={"displayModeBar": False}),
         ]),
 
+        # ── FreeD output target (live retarget) ─────────────────────────────
+        html.Div(style=card_style({"marginBottom": "14px"}), children=[
+            html.Div("FreeD Output Target",
+                     style={"fontSize": "10px", "color": MUTED,
+                            "textTransform": "uppercase",
+                            "letterSpacing": "0.05em", "marginBottom": "8px"}),
+            html.Div(style={"display": "flex", "gap": "8px",
+                            "alignItems": "center", "flexWrap": "wrap"},
+                     children=[
+                dcc.Input(id="freed-host", type="text",
+                          value=DEFAULT_FREED_HOST,
+                          placeholder="host or IP",
+                          debounce=True,
+                          style={"flex": "1 1 220px", "minWidth": "200px",
+                                 "padding": "8px 10px",
+                                 "background": BG, "color": TEXT,
+                                 "border": f"1px solid {MUTED}",
+                                 "borderRadius": "6px",
+                                 "fontFamily": "inherit", "fontSize": "13px"}),
+                dcc.Input(id="freed-port", type="number",
+                          value=DEFAULT_FREED_PORT,
+                          min=1, max=65535, step=1,
+                          style={"width": "100px",
+                                 "padding": "8px 10px",
+                                 "background": BG, "color": TEXT,
+                                 "border": f"1px solid {MUTED}",
+                                 "borderRadius": "6px",
+                                 "fontFamily": "inherit", "fontSize": "13px"}),
+                html.Button("Apply", id="freed-apply", n_clicks=0,
+                            style={"padding": "8px 16px",
+                                   "background": ACCENT, "color": BG,
+                                   "border": "none", "borderRadius": "6px",
+                                   "fontWeight": "700", "cursor": "pointer",
+                                   "fontFamily": "inherit"}),
+                html.Span(id="freed-status",
+                          children="Sends to bridge on :"
+                                   f"{CONTROL_PORT}. Restart-free.",
+                          style={"fontSize": "12px", "color": MUTED,
+                                 "marginLeft": "6px"}),
+            ]),
+        ]),
+
         # ── Footer ───────────────────────────────────────────────────────────
         html.Div(
-            f"Listening on UDP :{UDP_PORT}  •  OBTrack Phase 1",
+            f"Listening on UDP :{UDP_PORT}  •  OBTrack Phase 2",
             style={"color": MUTED, "fontSize": "11px", "textAlign": "center"},
         ),
 
@@ -391,6 +441,36 @@ def refresh(_n):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Callback — Apply button: send retarget JSON to the bridge's control port
+# ---------------------------------------------------------------------------
+@app.callback(
+    Output("freed-status", "children"),
+    Output("freed-status", "style"),
+    Input("freed-apply", "n_clicks"),
+    State("freed-host", "value"),
+    State("freed-port", "value"),
+    prevent_initial_call=True,
+)
+def apply_freed_target(n_clicks, host, port):
+    base_style = {"fontSize": "12px", "marginLeft": "6px"}
+    try:
+        host = (host or "").strip()
+        port = int(port or 0)
+        if not host:
+            return "Enter a host or IP.", {**base_style, "color": ORANGE}
+        if not (0 < port < 65536):
+            return f"Port {port} out of range.", {**base_style, "color": ORANGE}
+        msg = json.dumps({"out_host": host, "out_port": port}).encode()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.sendto(msg, (CONTROL_HOST, CONTROL_PORT))
+        sock.close()
+        return (f"✓ Sent → bridge now routes FreeD to {host}:{port}",
+                {**base_style, "color": GREEN})
+    except Exception as e:
+        return f"Error: {e}", {**base_style, "color": RED}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OBTrack Real-Time Dashboard")
     parser.add_argument("--udp-port", type=int, default=5005,
@@ -402,9 +482,16 @@ if __name__ == "__main__":
                         help="Bind address for the web server. Use 0.0.0.0 "
                              "to expose the dashboard on the network "
                              "(default 127.0.0.1).")
+    parser.add_argument("--control-host", default="127.0.0.1",
+                        help="Host of freed_bridge.py for live retargeting "
+                             "(default 127.0.0.1)")
+    parser.add_argument("--control-port", type=int, default=5007,
+                        help="freed_bridge.py control UDP port (default 5007)")
     args = parser.parse_args()
 
-    UDP_PORT = args.udp_port
+    UDP_PORT     = args.udp_port
+    CONTROL_HOST = args.control_host
+    CONTROL_PORT = args.control_port
 
     # Start UDP listener
     threading.Thread(

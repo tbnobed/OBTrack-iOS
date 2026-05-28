@@ -36,6 +36,7 @@ import math
 import os
 import socket
 import sys
+import threading
 import time
 
 
@@ -291,11 +292,60 @@ def main():
                    help="Override: extra Z (up) translation in metres. "
                         "Useful when the iPhone profile sets lens height = 0 "
                         "and you want to shift the rig vertically. (default 0)")
+    p.add_argument("--control-port", type=int,
+                   default=int(os.environ.get("CONTROL_PORT", 5007)),
+                   help="UDP control port for live retargeting. Send a JSON "
+                        "object like '{\"out_host\":\"192.168.1.50\",\"out_port\":6301}' "
+                        "to change the FreeD destination without restarting. "
+                        "Set to 0 to disable. (default 5007)")
     args = p.parse_args()
 
     preset_host, preset_port, preset_label = PRESETS[args.preset]
     out_host = args.out_host or preset_host
     out_port = args.out_port or preset_port
+
+    # Mutable target holder, swapped atomically by the control thread.
+    target_lock = threading.Lock()
+    target = {"host": out_host, "port": out_port}
+
+    def _control_listener(port):
+        """Listen for JSON retarget messages on a UDP port."""
+        csock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        csock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            csock.bind(("0.0.0.0", port))
+        except OSError as e:
+            print(f"[WARN] control port {port} unavailable: {e}",
+                  file=sys.stderr)
+            return
+        while True:
+            try:
+                raw, src = csock.recvfrom(4096)
+                msg = json.loads(raw.decode("utf-8"))
+                new_host = str(msg.get("out_host", "")).strip()
+                new_port = int(msg.get("out_port", 0))
+                if not new_host or not (0 < new_port < 65536):
+                    print(f"  ! control msg from {src[0]} rejected: "
+                          f"need 'out_host' and 'out_port' (1-65535)",
+                          file=sys.stderr)
+                    continue
+                with target_lock:
+                    old = (target["host"], target["port"])
+                    target["host"] = new_host
+                    target["port"] = new_port
+                print(f"  ⟳ FreeD target changed: "
+                      f"{old[0]}:{old[1]} → {new_host}:{new_port} "
+                      f"(requested by {src[0]})")
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+                print(f"  ! malformed control msg: {e}", file=sys.stderr)
+            except Exception as e:
+                print(f"  ! control listener error: {e}", file=sys.stderr)
+
+    if args.control_port > 0:
+        threading.Thread(
+            target=_control_listener, args=(args.control_port,),
+            daemon=True, name="freed-control"
+        ).start()
 
     in_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     in_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -318,6 +368,9 @@ def main():
     print(f"  Listening JSON   : 0.0.0.0:{args.listen_port}")
     print(f"  Sending FreeD to : {out_host}:{out_port}  "
           f"(camera id={args.camera_id})")
+    if args.control_port > 0:
+        print(f"  Control port     : 0.0.0.0:{args.control_port}  "
+              "(send JSON {out_host, out_port} to retarget live)")
     print(f"  Euler order      : {EULER_ORDER}  "
           f"(rot signs Y/P/R = {YAW_SIGN:+d}/{PITCH_SIGN:+d}/{ROLL_SIGN:+d})")
     print(f"  Position signs   : X/Y/Z = "
@@ -359,7 +412,9 @@ def main():
 
             freed = build_freed_packet(
                 args.camera_id, yaw, pitch, roll, ue_x, ue_y, ue_z)
-            out_sock.sendto(freed, (out_host, out_port))
+            with target_lock:
+                dst = (target["host"], target["port"])
+            out_sock.sendto(freed, dst)
 
             if fwd_sock:
                 fwd_sock.sendto(data, ("127.0.0.1", args.forward_port))
@@ -376,6 +431,7 @@ def main():
             now = time.time()
             if now - last_log >= 1.0:
                 print(f"  {count:>4d} pkt/s   "
+                      f"→ {dst[0]}:{dst[1]}   "
                       f"pos=({ue_x:+.3f},{ue_y:+.3f},{ue_z:+.3f}) m   "
                       f"rot=({yaw:+6.1f},{pitch:+6.1f},{roll:+6.1f})°   "
                       f"state={pkt.get('trackingState', '?')}")
