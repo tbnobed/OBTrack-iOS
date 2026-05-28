@@ -271,6 +271,26 @@ def main():
                    help="If set, also re-emit the raw JSON to "
                         "127.0.0.1:<port> so dashboard.py can run "
                         "simultaneously.")
+    # ----- Phone-to-lens offset (override knobs) ---------------------------
+    # The primary calibration (origin, forward direction, phone→lens offset)
+    # is captured ON THE iPHONE via the Calibration wizard and applied before
+    # the packet is sent. These flags add a final translation in the FreeD
+    # output frame for last-second tweaks without re-running the wizard, or
+    # for cases where the iPhone is sending RAW (uncalibrated) pose. Units
+    # are metres in FreeD axes: X = right, Y = forward, Z = up.
+    p.add_argument("--phone-offset-x", type=float,
+                   default=float(os.environ.get("PHONE_OFFSET_X", 0.0)),
+                   help="Override: extra X (right) translation in metres, "
+                        "applied to the output FreeD pose. (default 0)")
+    p.add_argument("--phone-offset-y", type=float,
+                   default=float(os.environ.get("PHONE_OFFSET_Y", 0.0)),
+                   help="Override: extra Y (forward) translation in metres. "
+                        "(default 0)")
+    p.add_argument("--phone-offset-z", type=float,
+                   default=float(os.environ.get("PHONE_OFFSET_Z", 0.0)),
+                   help="Override: extra Z (up) translation in metres. "
+                        "Useful when the iPhone profile sets lens height = 0 "
+                        "and you want to shift the rig vertically. (default 0)")
     args = p.parse_args()
 
     preset_host, preset_port, preset_label = PRESETS[args.preset]
@@ -302,6 +322,11 @@ def main():
           f"(rot signs Y/P/R = {YAW_SIGN:+d}/{PITCH_SIGN:+d}/{ROLL_SIGN:+d})")
     print(f"  Position signs   : X/Y/Z = "
           f"{POS_X_SIGN:+d}/{POS_Y_SIGN:+d}/{POS_Z_SIGN:+d}")
+    if any(abs(o) > 1e-9 for o in
+           (args.phone_offset_x, args.phone_offset_y, args.phone_offset_z)):
+        print(f"  Phone offset (m) : X/Y/Z = "
+              f"{args.phone_offset_x:+.3f}/{args.phone_offset_y:+.3f}/"
+              f"{args.phone_offset_z:+.3f}  (FreeD axes — override knobs)")
     if fwd_sock:
         print(f"  Mirroring JSON to: 127.0.0.1:{args.forward_port}  "
               "(for dashboard.py)")
@@ -309,6 +334,7 @@ def main():
 
     count = 0
     last_log = time.time()
+    last_profile = None    # tracks profile-name changes for logging
 
     try:
         while True:
@@ -326,12 +352,25 @@ def main():
                 (rot["qx"], rot["qy"], rot["qz"], rot["qw"]),
             )
 
+            # Apply gateway-side phone-offset override (FreeD axes, metres).
+            ue_x += args.phone_offset_x
+            ue_y += args.phone_offset_y
+            ue_z += args.phone_offset_z
+
             freed = build_freed_packet(
                 args.camera_id, yaw, pitch, roll, ue_x, ue_y, ue_z)
             out_sock.sendto(freed, (out_host, out_port))
 
             if fwd_sock:
                 fwd_sock.sendto(data, ("127.0.0.1", args.forward_port))
+
+            # Surface profile-name changes so the operator can see which
+            # iPhone calibration is currently active.
+            profile = pkt.get("profile")
+            if profile != last_profile:
+                print(f"  → active iPhone profile: "
+                      f"{profile or '(raw — no calibration)'}")
+                last_profile = profile
 
             count += 1
             now = time.time()

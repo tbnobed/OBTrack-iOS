@@ -43,6 +43,7 @@ _roll         = deque(maxlen=MAX_HISTORY)   # Euler degrees
 _pitch        = deque(maxlen=MAX_HISTORY)
 _yaw          = deque(maxlen=MAX_HISTORY)
 _state        = "Waiting for data…"
+_profile      = None
 _packet_count = 0
 _rate_window  = deque(maxlen=60)            # wall-clock times for rate calc
 
@@ -110,6 +111,7 @@ def _udp_listener(port: int):
                 _pitch.append(pitch)
                 _yaw.append(yaw)
                 _state = pkt.get("trackingState", "?")
+                _profile = pkt.get("profile")  # may be None for raw pose
                 _packet_count += 1
                 _rate_window.append(datetime.now().timestamp())
 
@@ -203,6 +205,17 @@ app.layout = html.Div(
                         "gridTemplateColumns": "repeat(4, 1fr)",
                         "gap": "10px", "marginBottom": "14px"}),
 
+        # ── UWB status (placeholder — receiver ships in a later phase) ──────
+        html.Div(style=card_style({"marginBottom": "14px"}), children=[
+            html.Div("UWB Anchors",
+                     style={"fontSize": "10px", "color": MUTED,
+                            "textTransform": "uppercase",
+                            "letterSpacing": "0.05em", "marginBottom": "6px"}),
+            html.Div("Disabled — hardware not yet integrated. "
+                     "See docs/ESP32_UWB_INTEGRATION_PLAN.md.",
+                     style={"fontSize": "13px", "color": TEXT}),
+        ]),
+
         # ── Main charts (3D trace + position over time) ─────────────────────
         html.Div(
             style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
@@ -264,6 +277,7 @@ def refresh(_n):
         px      = list(_px);  py = list(_py);  pz = list(_pz)
         rolls   = list(_roll); pitches = list(_pitch); yaws = list(_yaw)
         state   = _state
+        profile = _profile
         count   = _packet_count
         window  = list(_rate_window)
 
@@ -288,11 +302,13 @@ def refresh(_n):
         ])
 
     cur_pos = f"({px[-1]:+.3f}, {py[-1]:+.3f}, {pz[-1]:+.3f})" if px else "—"
+    profile_label = profile if profile else "raw (no calibration)"
+    profile_col   = ACCENT if profile else MUTED
     cards = [
-        stat_card("Tracking State", state,            state_col),
-        stat_card("Packet Rate",    f"{rate:.1f} pps"),
-        stat_card("Total Frames",   f"{count:,}"),
-        stat_card("Position (m)",   cur_pos),
+        stat_card("Tracking State",     state,         state_col),
+        stat_card("Packet Rate",        f"{rate:.1f} pps"),
+        stat_card("Active Profile",     profile_label, profile_col),
+        stat_card("Position (m)",       cur_pos),
     ]
 
     # Shared plot layout helper

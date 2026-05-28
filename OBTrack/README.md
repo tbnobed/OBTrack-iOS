@@ -1,161 +1,193 @@
-# OBTrack iOS — Phase 1
+# OBTrack iOS
 
-**OBTrack** is an iOS app that reads ARKit 6DOF position and rotation data from an iPhone 16 Pro Max and streams it over UDP to a PC. This is Phase 1 — proving the iPhone can reliably send ARKit tracking data over the network. FreeD / Unreal Engine Live Link conversion will be added in a future phase.
+**OBTrack** is a hybrid iPhone + UWB camera-tracking system for virtual
+production. The iPhone reads ARKit 6DOF pose, applies on-stage calibration,
+and streams it over UDP to a PC gateway. The gateway converts to FreeD and
+feeds Unreal Engine (Live Link FreeD) or Assimilate LiveFX. A live dashboard
+shows what's happening end-to-end.
 
 ---
 
 ## Requirements
 
-| Item | Minimum version |
-|------|----------------|
-| Mac with Xcode | Xcode 15+ |
-| iPhone | iPhone 16 Pro Max (or any ARKit-capable device) |
-| iOS | 18.0+ |
-| PC receiver | Python 3.7+ |
+| Item            | Minimum version                                     |
+|-----------------|-----------------------------------------------------|
+| Mac with Xcode  | Xcode 15+                                           |
+| iPhone          | iPhone 16 Pro Max (or any ARKit-capable device)     |
+| iOS             | 18.0+                                               |
+| PC receiver     | Python 3.9+, or Ubuntu 22.04+ (one-shot installer)  |
 
-> **Important:** ARKit requires a physical iPhone. The iOS Simulator does not support ARKit.
+> ARKit needs a physical device — the iOS Simulator does not work.
 
 ---
 
-## Project structure
+## Repository layout
 
 ```
 OBTrack/
-├── OBTrack/
-│   ├── OBTrackApp.swift          # App entry point (@main)
-│   ├── ContentView.swift         # Main SwiftUI screen
-│   ├── ARTrackingManager.swift   # ARKit session + tracking logic
-│   ├── UDPClient.swift           # Network.framework UDP sender
-│   ├── TrackingPacket.swift      # Codable data model + JSON serialization
-│   └── Info.plist                # Camera & local network permissions
-├── OBTrack.xcodeproj/            # Xcode project
-└── gateway_test/
-    └── udp_receiver.py           # Python test receiver for the PC
+├── OBTrack/                            # iOS app source
+│   ├── OBTrackApp.swift                # @main entry point
+│   ├── ContentView.swift               # Main SwiftUI screen
+│   ├── ARTrackingManager.swift         # ARKit session + per-frame pipeline
+│   ├── UDPClient.swift                 # Network.framework UDP sender
+│   ├── TrackingPacket.swift            # JSON packet schema
+│   ├── Calibration.swift               # Calibration math + profile storage
+│   ├── CalibrationView.swift           # 5-step on-set wizard
+│   ├── BrandMark.swift                 # OBTrack logo + brand palette
+│   ├── ARCameraView.swift              # ARKit preview + depth heat-map
+│   └── Assets.xcassets / Info.plist
+├── OBTrack.xcodeproj/                  # Xcode project
+├── gateway_test/                       # PC gateway (Python)
+│   ├── freed_bridge.py                 # JSON → FreeD bridge
+│   ├── dashboard.py                    # Live web dashboard (Dash/Plotly)
+│   ├── udp_receiver.py                 # Simple JSON sniffer for testing
+│   ├── setup_ubuntu.sh                 # One-shot Ubuntu installer
+│   ├── requirements.txt
+│   ├── UNREAL_SETUP.md                 # Live Link FreeD configuration
+│   └── LIVEFX_SETUP.md                 # Assimilate LiveFX configuration
+└── docs/
+    └── ESP32_UWB_INTEGRATION_PLAN.md   # Phase-3 roadmap (UWB + encoders)
 ```
 
 ---
 
-## How to open and build in Xcode
+## Quick start
 
-1. Clone or download this repository to your Mac.
-2. Open `OBTrack.xcodeproj` in Xcode (double-click it in Finder or `open OBTrack.xcodeproj` in Terminal).
-3. In the **Project Navigator**, select the **OBTrack** project at the top, then select the **OBTrack** target.
-4. Under **Signing & Capabilities**, set your **Team** (your Apple Developer account). Xcode will manage provisioning automatically.
-5. Change the **Bundle Identifier** if needed (default: `com.obtrack.ios`).
-6. Select your iPhone as the run destination in the toolbar (it must be plugged in or on the same Wi-Fi for wireless debugging).
-7. Press **Run (⌘R)**. Accept the camera permission prompt when the app launches on the phone.
+### 1. Build and install the iOS app
 
----
+1. Open `OBTrack.xcodeproj` in Xcode.
+2. Select the **OBTrack** target → **Signing & Capabilities** → set your **Team**.
+3. Change the **Bundle Identifier** if needed (default `com.obtrack.ios`).
+4. Plug in the iPhone, select it as the run destination, press **⌘R**.
+5. On the phone: **Settings → General → VPN & Device Management** → trust the
+   developer certificate.
+6. Launch the app, accept the camera permission, accept local network access.
 
-## How to run on your iPhone
+### 2. Run the gateway
 
-1. Plug in your iPhone (or use wireless pairing in Xcode → Window → Devices and Simulators).
-2. On your iPhone, go to **Settings → Privacy → Developer Mode** and enable Developer Mode (required on iOS 16+).
-3. On first launch after installing from Xcode, go to **Settings → General → VPN & Device Management** and trust your developer certificate.
-4. Open the app. The camera permission dialog will appear — tap **Allow**.
+**Ubuntu (recommended — auto-installs as systemd services):**
 
----
+```bash
+cd OBTrack/gateway_test
+sudo FREED_HOST=<unreal-pc-ip> FREED_PRESET=unreal bash setup_ubuntu.sh
+```
 
-## How to start the Python UDP receiver on your PC
+The bridge and dashboard come up immediately and auto-start on every boot.
+Dashboard at `http://<server-ip>:8050`.
 
-Make sure Python 3 is installed, then:
+**Mac / Windows / ad-hoc:**
 
 ```bash
 cd gateway_test
-python3 udp_receiver.py
+pip3 install -r requirements.txt
+
+# terminal 1 — bridge: JSON → FreeD (also mirrors JSON to :5006 for the dashboard)
+python3 freed_bridge.py --preset unreal --out-host 127.0.0.1 --forward-port 5006
+
+# terminal 2 — dashboard
+python3 dashboard.py --udp-port 5006 --host 0.0.0.0
 ```
 
-By default it listens on all interfaces on port **5005**. You can override these:
+### 3. Point the iPhone at the gateway
 
-```bash
-python3 udp_receiver.py --host 0.0.0.0 --port 5005
-```
-
-You will see output like:
-
-```
-OBTrack UDP Receiver listening on 0.0.0.0:5005
-Waiting for packets from the iOS app … (Ctrl+C to stop)
-
-14:22:01.123  [Frame      1] state=normal               pos=(+0.0000, +0.0000, +0.0000)  quat=(+0.0000, +0.0000, +0.0000, +1.0000)
-14:22:01.156  [Frame      2] state=normal               pos=(+0.0012, +1.2201, -0.0034)  quat=(+0.0100, +0.2100, -0.0020, +0.9776)
-```
-
-Press **Ctrl+C** to stop.
+In the OBTrack app, type the gateway's IP, leave port `5005`, pick `60 Hz`,
+turn on **Lite (shooting) mode**, hit **Start**.
 
 ---
 
-## How to enter the PC IP address in the app
+## Calibration — on stage
 
-1. On your PC, find its local IP address:
-   - **Windows:** `ipconfig` in Command Prompt → look for IPv4 Address
-   - **macOS/Linux:** `ifconfig` or `ip addr`
-2. Open OBTrack on your iPhone.
-3. In the **Network** section, replace `192.168.1.100` with your PC's IP address.
-4. Leave the port as `5005` (or change it if you started the receiver on a different port).
-5. Make sure your iPhone and PC are on the **same Wi-Fi network**.
+The iPhone is a sensor; Unreal needs to track the **lens centre**, not the
+phone. The Calibration wizard handles that.
+
+Tap the **scope** icon in the top bar (next to the gear). 5 cards:
+
+| # | Step                          | What you do                                                          |
+|---|-------------------------------|----------------------------------------------------------------------|
+| 1 | **Set Origin**                | Place phone at stage zero, tap Capture. Becomes (0,0,0) in Unreal.   |
+| 2 | **Set Forward Direction**     | Capture start → walk 2 m forward → Capture end. Walked dir = +X.     |
+| 3 | **Set Camera Height**         | Capture floor + lens height, or type the lens height in metres.      |
+| 4 | **Phone-to-Lens Offset**      | mm offsets from phone IMU to lens entrance pupil. Presets available. |
+| 5 | **Save / Load Profile**       | Name the rig (e.g. *ALEXA + 50mm top-mount*) and save.               |
+
+Profiles live in the app's `Documents/profiles/` and can be shared between
+phones via the iOS share sheet. The active profile name is broadcast in
+every UDP packet so the gateway and dashboard can show which calibration
+is in use.
+
+**Verify on stage:** walk a known 1 m square. Unreal's CineCameraActor
+should move 1 m in matching directions. If a sign is wrong, flip the
+corresponding constant at the top of `freed_bridge.py` (`POS_*_SIGN`,
+`YAW_SIGN`, `PITCH_SIGN`, `ROLL_SIGN`) and restart the bridge.
+
+### Gateway-side offset overrides
+
+For last-second tweaks without re-running the wizard, the bridge accepts:
+
+```bash
+python3 freed_bridge.py --phone-offset-x 0.0 --phone-offset-y -0.15 --phone-offset-z 0.12
+```
+
+Units are **metres in FreeD axes** (X = right, Y = forward, Z = up). These
+are additive on top of whatever calibration the iPhone is already applying.
 
 ---
 
 ## UDP packet format
 
-Each packet is a JSON object (UTF-8 encoded):
+One JSON object per UDP datagram, UTF-8 encoded:
 
 ```json
 {
   "device": "iphone16promax",
   "timestamp": 1716124921.456,
   "frame": 1234,
-  "position": {
-    "x": 0.12,
-    "y": 1.45,
-    "z": -0.83
-  },
-  "rotation": {
-    "qx": 0.0,
-    "qy": 0.2,
-    "qz": 0.0,
-    "qw": 0.98
-  },
-  "trackingState": "normal"
+  "position": { "x": 0.12, "y": 1.45, "z": -0.83 },
+  "rotation": { "qx": 0.0, "qy": 0.2, "qz": 0.0, "qw": 0.98 },
+  "trackingState": "normal",
+  "profile": "ALEXA + 50mm top-mount"
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `device` | Always `"iphone16promax"` |
-| `timestamp` | Unix timestamp (seconds since epoch) |
-| `frame` | Monotonically increasing frame counter |
-| `position` | World-space position in meters (ARKit coordinate system) |
-| `rotation` | World-space rotation as a unit quaternion |
-| `trackingState` | `"normal"`, `"limited"`, or `"notAvailable"` |
+| Field           | Meaning                                                            |
+|-----------------|--------------------------------------------------------------------|
+| `device`        | Always `"iphone16promax"`                                          |
+| `timestamp`     | ARKit capture time (monotonic, seconds)                            |
+| `frame`         | Monotonically increasing counter                                   |
+| `position`      | **Lens-centre** position in metres, stage frame (or raw ARKit if no profile is active) |
+| `rotation`      | Lens orientation as a unit quaternion                              |
+| `trackingState` | `"normal"`, `"limited (…)"`, or `"notAvailable"`                   |
+| `profile`       | Name of the active calibration profile, or `null` for raw pose     |
 
-**ARKit coordinate system:** +X is right, +Y is up, −Z is forward (into the screen).
-
----
-
-## Phase 1 scope and limitations
-
-- This version **only sends raw ARKit data**. No FreeD or Unreal Engine conversion yet.
-- There is **no error correction** — UDP packets may be dropped on congested networks. This is acceptable for Phase 1 proof-of-concept.
-- The app must stay in the **foreground** while tracking. ARKit pauses when the app is backgrounded.
-- The tracking quality indicator (`normal` / `limited`) tells you whether ARKit has good environmental lock. Point the phone at a textured surface with good lighting for best results.
+**Stage / ARKit axes:** +X right, +Y up, −Z forward. The FreeD bridge
+re-maps these to the broadcast/Unreal conventions; you should not need to
+think about it on stage.
 
 ---
 
-## Roadmap
+## Phase roadmap
 
-- **Phase 2:** Convert ARKit quaternion + position to FreeD protocol binary packets
-- **Phase 3:** Unreal Engine Live Link plugin integration
-- **Phase 4:** Multi-device support, calibration offsets
+| Phase | Scope                                                              | Status   |
+|-------|--------------------------------------------------------------------|----------|
+|   1   | iPhone ARKit → JSON over UDP                                       | **Done** |
+|   2a  | FreeD bridge + Unreal Live Link / LiveFX                           | **Done** |
+|   2b  | On-iPhone calibration wizard + profile persistence                 | **Done** |
+|   2c  | Dashboard shows active profile + UWB-ready status                  | **Done** |
+|   3   | ESP32 + UWB anchor fusion (absolute correction)                    | planned  |
+|   4   | ESP32 zoom / focus encoders → FreeD lens fields                    | planned  |
+
+Phase 3 design — anchor placement, packet schema, fusion math, milestones —
+is in [`docs/ESP32_UWB_INTEGRATION_PLAN.md`](docs/ESP32_UWB_INTEGRATION_PLAN.md).
 
 ---
 
 ## Troubleshooting
 
-| Problem | Fix |
-|---------|-----|
-| No packets received | Check IP/port, confirm same Wi-Fi, check macOS firewall |
-| "limited (initializing)" indefinitely | Move the phone slowly around a well-lit textured area |
-| App crashes on start | Make sure camera permission was granted |
-| Build fails with signing error | Set your Team in Xcode → Signing & Capabilities |
+| Problem                                | Fix                                                                       |
+|----------------------------------------|---------------------------------------------------------------------------|
+| No packets at gateway                  | Same Wi-Fi? Firewall? Try `python3 udp_receiver.py` to sniff.             |
+| Unreal Live Link source stays grey     | Check `freed_bridge.py` `--out-host` matches the Unreal machine IP.       |
+| Camera up/down inverted in Unreal      | Set `POS_Z_SIGN = -1` at the top of `freed_bridge.py`, restart bridge.    |
+| "limited (initializing)" never clears  | Move the phone slowly through a well-lit, textured area.                  |
+| Profile field always `null`            | iPhone has no active profile loaded — open Calibrate → Profiles → pick.   |
+| Build fails with signing error         | Set your Team in Xcode → Signing & Capabilities.                          |
