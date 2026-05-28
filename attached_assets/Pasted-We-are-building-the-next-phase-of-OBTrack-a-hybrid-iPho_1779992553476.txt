@@ -1,0 +1,318 @@
+We are building the next phase of OBTrack, a hybrid iPhone + ESP32/UWB camera tracking system for Unreal Engine.
+
+Current status:
+- iPhone iOS app is already working.
+- iPhone uses ARKit to send 6DOF JSON tracking data over UDP.
+- PC gateway is already working.
+- Gateway receives iPhone JSON on UDP port 5005.
+- Gateway converts tracking data to FreeD.
+- Unreal Engine receives FreeD successfully.
+- Dashboard is already working.
+
+Now build Phase 2: Calibration + Arduino/ESP32 device integration planning.
+
+Goal:
+Add calibration support in the gateway and prepare for ESP32/UWB anchor/tag integration.
+
+System architecture:
+
+iPhone ARKit app
+  → sends ARKit position/rotation JSON over UDP
+
+ESP32/UWB camera tag
+  → will send absolute UWB position JSON over UDP
+
+ESP32/UWB anchors
+  → fixed reference points around the stage
+
+PC Gateway
+  → receives iPhone ARKit data
+  → receives ESP32/UWB data
+  → applies calibration
+  → applies phone-to-lens offset
+  → later fuses ARKit + UWB
+  → outputs final FreeD data to Unreal
+
+Unreal Engine
+  → receives FreeD through Live Link FreeD
+
+PART 1 — Gateway calibration features
+
+Add a calibration system to the Python gateway.
+
+Create or update these files:
+
+1. calibration.py
+2. config/obtrack_profile.json
+3. update freed_bridge.py to use calibration.py
+4. update dashboard.py with calibration status if practical
+
+Required calibration features:
+
+1. Set Origin
+- User places the camera/phone at the real-world stage origin.
+- Gateway records the current ARKit position as the origin.
+- All future position values are relative to this point.
+
+2. Set Forward Direction
+- User points the camera/phone straight downstage or toward the intended Unreal forward direction.
+- Gateway records the current yaw as the forward reference.
+- All future rotation values are adjusted relative to this heading.
+
+3. Phone-to-Lens Offset
+The iPhone is mounted on the camera, but Unreal needs to track the camera lens center, not the phone body.
+
+Add configurable offsets in meters:
+- phone_offset_x_m
+- phone_offset_y_m
+- phone_offset_z_m
+
+These offsets represent the physical distance from the phone tracking point to the camera lens center.
+
+Example:
+{
+  "phone_offset_m": {
+    "x": 0.0,
+    "y": -0.15,
+    "z": 0.12
+  }
+}
+
+4. Camera Profile
+Support save/load profiles for different cameras.
+
+Example profile:
+{
+  "profile_name": "Camera_A",
+  "camera_id": 1,
+  "origin_m": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0
+  },
+  "forward_yaw_degrees": 0.0,
+  "phone_offset_m": {
+    "x": 0.0,
+    "y": -0.15,
+    "z": 0.12
+  },
+  "position_scale": 1.0,
+  "smoothing": {
+    "enabled": true,
+    "position_alpha": 0.35,
+    "rotation_alpha": 0.35
+  },
+  "uwb": {
+    "enabled": false,
+    "listen_port": 5010,
+    "blend_alpha": 0.15
+  }
+}
+
+5. Calibration CLI commands
+Add command-line options to the gateway:
+
+--profile config/obtrack_profile.json
+--set-origin
+--set-forward
+--phone-offset-x
+--phone-offset-y
+--phone-offset-z
+--save-profile
+
+If live command input is easier, add keyboard commands while the gateway is running:
+
+o = set origin
+f = set forward direction
+s = save profile
+r = reset calibration
+q = quit
+
+6. Calibration math
+After receiving ARKit data:
+- subtract origin
+- rotate position into calibrated forward direction
+- apply phone-to-lens offset
+- apply smoothing
+- output calibrated pose to FreeD
+
+Important:
+Keep all distances in meters internally.
+Only convert to FreeD scale at final packet output.
+
+PART 2 — Arduino/ESP32/UWB planning
+
+Prepare for ESP32 devices but do not require the hardware to be connected yet.
+
+We will use:
+- ESP32-S3 board as camera tag controller
+- DWM3000 or DW1000-class UWB module for camera tag
+- 4 or more ESP32-S3 + UWB anchor nodes
+- optional IMU on tag
+- optional zoom/focus rotary encoders
+
+Create documentation file:
+
+docs/ESP32_UWB_INTEGRATION_PLAN.md
+
+Include:
+
+1. Device roles
+
+A. Camera Tag
+Mounted on camera rig.
+Sends:
+{
+  "type": "uwb_tag",
+  "device_id": "camA_tag",
+  "timestamp": 123456.789,
+  "position": {
+    "x": 1.25,
+    "y": 0.82,
+    "z": 1.55
+  },
+  "quality": {
+    "anchors_used": 4,
+    "rssi": -71,
+    "confidence": 0.86
+  }
+}
+
+B. Anchor Node
+Fixed around studio.
+Each anchor has:
+- anchor_id
+- known x/y/z location
+- UWB ranging role
+- optional WiFi status reporting
+
+Example anchor config:
+{
+  "anchor_id": "anchor_01",
+  "position_m": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 2.5
+  }
+}
+
+2. Recommended anchor placement
+Document this:
+
+Minimum:
+- 4 anchors
+
+Better:
+- 6 anchors
+
+Placement:
+- one near each corner of the tracking volume
+- mount anchors high, around 8–12 feet if possible
+- avoid putting all anchors at the same height
+- avoid mounting anchors directly behind large metal structures
+- measure anchor positions carefully
+- keep line of sight to the camera tag when possible
+
+3. UWB packet receiver
+Add placeholder gateway listener for ESP32/UWB JSON packets on UDP port 5010.
+
+Create:
+
+uwb_receiver.py
+
+Requirements:
+- listen on UDP 5010
+- parse UWB tag position packets
+- validate required fields
+- print position and confidence
+- ignore malformed packets
+- expose latest UWB position to future fusion code
+
+4. Fusion plan
+Document but do not fully implement yet:
+
+- ARKit is smooth but can drift.
+- UWB is absolute but noisier.
+- Use ARKit for fast motion and rotation.
+- Use UWB as slow correction for absolute X/Y/Z position.
+- Blend position like this:
+  fused_position = arkit_position * 0.85 + uwb_position * 0.15
+
+Make the blend configurable:
+uwb.blend_alpha
+
+5. Future lens encoder packet
+Document future ESP32 packet format for zoom/focus:
+
+{
+  "type": "lens_encoder",
+  "device_id": "camA_lens",
+  "timestamp": 123456.789,
+  "zoom_raw": 12043,
+  "focus_raw": 8401
+}
+
+6. Development milestones
+
+Milestone 1:
+Calibration works with iPhone-only ARKit.
+
+Milestone 2:
+Dashboard shows calibrated vs raw position.
+
+Milestone 3:
+ESP32 UWB listener receives test JSON.
+
+Milestone 4:
+Manual test UWB packets can influence position through blend_alpha.
+
+Milestone 5:
+Real ESP32 UWB tag sends position.
+
+Milestone 6:
+Lens encoder sends zoom/focus values.
+
+PART 3 — Dashboard updates
+
+Update the dashboard if possible to show:
+- raw ARKit position
+- calibrated position
+- current origin
+- forward yaw offset
+- phone-to-lens offset
+- UWB status: disabled / waiting / receiving
+- UWB confidence
+
+Do not overcomplicate UI. Keep it simple.
+
+PART 4 — Test packet generator
+
+Create:
+
+tools/send_test_uwb_packet.py
+
+Requirements:
+- sends fake UWB JSON packets to UDP port 5010
+- lets us test gateway before hardware arrives
+- sends x/y/z values that slowly move in a circle
+- includes confidence value
+
+PART 5 — README update
+
+Update README.md with:
+- how to run gateway with calibration
+- how to set origin
+- how to set forward direction
+- how to edit phone-to-lens offset
+- how to run UWB test packet generator
+- how ESP32 devices will be added later
+
+Important design rules:
+- Do not break existing FreeD output.
+- Keep the existing iPhone JSON packet format compatible.
+- Keep Unreal output on FreeD.
+- Keep internal units in meters.
+- Keep this phase focused on calibration and UWB-readiness.
+- Do not try to build the actual ESP32 firmware yet.
+- Add comments explaining the math.
+- Make the code reliable and easy to debug.
