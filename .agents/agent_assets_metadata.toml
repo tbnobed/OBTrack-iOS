@@ -1,26 +1,3 @@
 uploads = []
 generated = []
-
-[[outputs]]
-id = "l9p2ekF4hTh5PM_G2y7dc"
-uri = "file://OBTrack_iOS.tar.gz"
-type = "unspecified"
-title = "OBTrack iOS — full project (Mac / Xcode)"
-
-[[outputs]]
-id = "RvWQvFaExV3wxVWNvKAvD"
-uri = "file://OBTrack_Gateway.tar.gz"
-type = "unspecified"
-title = "OBTrack Gateway — standalone (Ubuntu server)"
-
-[[outputs]]
-id = "33c2VqGZiQMaGt-UYmVgG"
-uri = "file://OBTrack_Gateway.tar"
-type = "unspecified"
-title = "OBTrack Gateway — uncompressed tar (Ubuntu server)"
-
-[[outputs]]
-id = "4qoNG0YwV_u4MO4ODT6Bd"
-uri = "file://OBTrack_Gateway.zip"
-type = "unspecified"
-title = "OBTrack Gateway — zip (double-click to extract on Mac)"
+outputs = []
