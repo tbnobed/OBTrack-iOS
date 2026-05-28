@@ -28,10 +28,25 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
     /// when running in Lite mode).
     @Published var depthImage: UIImage? = nil
 
+    /// Active calibration profile. When non-nil the broadcast pose is the
+    /// stage-frame *lens* pose (origin/yaw aligned, phone→lens offset applied);
+    /// when nil the raw ARKit pose is broadcast unchanged.
+    @Published private(set) var activeProfile: CalibrationProfile? = nil
+
+    /// Latest raw ARKit position, updated every frame on main. Used by the
+    /// calibration wizard to capture poses on a button tap.
+    @Published private(set) var latestRawPositionVec: SIMD3<Float>? = nil
+    @Published private(set) var latestRawQuaternion: simd_quatf?    = nil
+    var latestRawPosition: SIMD3<Float>? { latestRawPositionVec }
+
     // MARK: - Internal
 
     let session = ARSession()
     private let udpClient = UDPClient()
+
+    /// Mirror of `activeProfile`, owned by `sessionQueue`. Read every frame to
+    /// avoid touching @Published off-main. Updated via `sessionQueue.async`.
+    private var sessionProfile: CalibrationProfile? = nil
 
     /// Dedicated serial queue for the ARSession delegate. Keeping per-frame
     /// work off the main thread frees SwiftUI to render smoothly.
@@ -70,6 +85,23 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
         // @Published `udpStatus` on main.
         udpClient.onStatusChange = { [weak self] status in
             DispatchQueue.main.async { self?.udpStatus = status }
+        }
+
+        // Restore last-active profile from disk.
+        if let name = UserDefaults.standard.activeProfileName,
+           let p = ProfileStore.shared.list().first(where: { $0.name == name }) {
+            setActiveProfile(p)
+        }
+    }
+
+    // MARK: - Calibration
+
+    /// Set (or clear) the active calibration profile. Safe to call from main.
+    func setActiveProfile(_ profile: CalibrationProfile?) {
+        activeProfile = profile
+        UserDefaults.standard.activeProfileName = profile?.name
+        sessionQueue.async { [weak self] in
+            self?.sessionProfile = profile
         }
     }
 
@@ -158,38 +190,57 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
             stateString = "notAvailable"
         }
 
-        // Extract world-space position and quaternion from the camera transform
+        // Raw ARKit world pose
         let t = camera.transform.columns.3
-        let pos = Position(x: t.x, y: t.y, z: t.z)
-        let q = simd_quaternion(camera.transform)
-        let rot = Rotation(qx: q.imag.x, qy: q.imag.y, qz: q.imag.z, qw: q.real)
+        let rawPos = SIMD3<Float>(t.x, t.y, t.z)
+        let rawQuat = simd_quaternion(camera.transform)
+
+        // Apply active calibration profile (if any). Result is stage-frame lens pose.
+        let outPos: SIMD3<Float>
+        let outQuat: simd_quatf
+        if let prof = sessionProfile {
+            (outPos, outQuat) = prof.apply(rawPosition: rawPos, rawQuaternion: rawQuat)
+        } else {
+            outPos  = rawPos
+            outQuat = rawQuat
+        }
+
+        let pos = Position(x: outPos.x, y: outPos.y, z: outPos.z)
+        let rot = Rotation(qx: outQuat.imag.x, qy: outQuat.imag.y,
+                           qz: outQuat.imag.z, qw: outQuat.real)
 
         // Frame counter lives on the session queue so we never read a
         // @Published property off-main.
         sendSeq &+= 1
         let currentFrame = sendSeq
         let now = frame.timestamp
+        let profName = sessionProfile?.name
 
-        // Publish to UI on the main thread
+        // Publish to UI on the main thread (raw + calibrated)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.trackingState = stateString
             self.position = pos
             self.rotation = rot
             self.frameCount = currentFrame
+            self.latestRawPositionVec = rawPos
+            self.latestRawQuaternion  = rawQuat
         }
 
         // Rate-limited UDP send (uses ARKit capture time, not wall clock)
         if now - lastSendTime >= sendInterval {
             lastSendTime = now
-            let packet = TrackingPacket.from(camera: camera,
-                                             frame: currentFrame,
-                                             timestamp: now)
+            let packet = TrackingPacket(
+                timestamp: now,
+                frame: currentFrame,
+                position: pos,
+                rotation: rot,
+                trackingState: stateString,
+                profile: profName
+            )
             if let data = packet.toJSONData() {
                 udpClient.send(data)
             }
-            // udpStatus is now bridged via UDPClient.onStatusChange; no direct
-            // cross-thread read of udpClient.sendStatus.
         }
 
         // Rate-limited depth processing from LiDAR (skipped in Lite mode)

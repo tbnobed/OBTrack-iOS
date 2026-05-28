@@ -32,6 +32,8 @@ struct ContentView: View {
     @State private var showMesh: Bool  = true
     /// Whether the settings panel is expanded
     @State private var showSettings: Bool = true
+    /// Calibration wizard sheet
+    @State private var showCalibration: Bool = false
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     private var isLandscape: Bool { verticalSizeClass == .compact }
@@ -39,10 +41,15 @@ struct ContentView: View {
     // MARK: - Body
 
     var body: some View {
-        if isLandscape {
-            landscapeLayout
-        } else {
-            portraitLayout
+        Group {
+            if isLandscape {
+                landscapeLayout
+            } else {
+                portraitLayout
+            }
+        }
+        .sheet(isPresented: $showCalibration) {
+            CalibrationView(tracker: tracker)
         }
     }
 
@@ -150,6 +157,17 @@ struct ContentView: View {
 
             // Tracking status dot
             TrackingStateIndicator(state: tracker.trackingState)
+
+            // Calibration wizard
+            Button {
+                showCalibration = true
+            } label: {
+                Image(systemName: "scope")
+                    .foregroundStyle(tracker.activeProfile == nil
+                                     ? .white : BrandColor.accent)
+                    .font(.title3)
+            }
+            .padding(.leading, 8)
 
             // Settings gear toggle
             Button {
@@ -275,6 +293,17 @@ struct ContentView: View {
                 Text("\(tracker.frameCount)")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.8))
+            }
+            HStack {
+                Text("Profile").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Text(tracker.activeProfile?.name ?? "raw (no calibration)")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(tracker.activeProfile == nil
+                                     ? .white.opacity(0.6)
+                                     : BrandColor.accent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
         .padding(10)

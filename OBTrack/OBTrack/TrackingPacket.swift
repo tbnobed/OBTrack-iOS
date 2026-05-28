@@ -33,46 +33,16 @@ struct TrackingPacket: Codable {
     var timestamp: Double
     /// Monotonically increasing frame counter
     var frame: Int
-    /// World-space position of the device
+    /// Position. Raw ARKit world if no calibration profile is active;
+    /// stage-frame lens position when a profile is active.
     var position: Position
-    /// World-space rotation of the device as a quaternion
+    /// Rotation as a quaternion, matching `position` (raw ARKit or stage lens).
     var rotation: Rotation
     /// ARKit tracking quality: "normal", "limited", or "notAvailable"
     var trackingState: String
-
-    // MARK: - Factory helper
-
-    /// Build a TrackingPacket from an ARCamera, a frame counter, and the ARKit
-    /// capture time of the frame (must be `ARFrame.timestamp`, NOT wall clock).
-    static func from(camera: ARCamera, frame: Int, timestamp: TimeInterval) -> TrackingPacket {
-        // Extract position from the 4th column of the transform matrix (translation)
-        let t = camera.transform.columns.3
-        let pos = Position(x: t.x, y: t.y, z: t.z)
-
-        // Convert the 3×3 rotation part of the transform matrix to a quaternion.
-        // simd_quaternion(float4x4) uses the upper-left 3×3 of the matrix.
-        let q = simd_quaternion(camera.transform)
-        let rot = Rotation(qx: q.imag.x, qy: q.imag.y, qz: q.imag.z, qw: q.real)
-
-        // Map ARCamera.TrackingState to a human-readable string
-        let stateString: String
-        switch camera.trackingState {
-        case .normal:
-            stateString = "normal"
-        case .limited:
-            stateString = "limited"
-        case .notAvailable:
-            stateString = "notAvailable"
-        }
-
-        return TrackingPacket(
-            timestamp: timestamp,
-            frame: frame,
-            position: pos,
-            rotation: rot,
-            trackingState: stateString
-        )
-    }
+    /// Name of the active calibration profile, or nil for raw pose.
+    /// Downstream tools log this so a take can be tied back to a known rig.
+    var profile: String? = nil
 
     /// Serialize the packet to UTF-8 encoded JSON Data.
     func toJSONData() -> Data? {
