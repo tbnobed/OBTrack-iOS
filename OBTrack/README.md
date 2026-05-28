@@ -37,7 +37,7 @@ OBTrack/
 │   ├── ARCameraView.swift              # ARKit preview + depth heat-map
 │   └── Assets.xcassets / Info.plist
 ├── OBTrack.xcodeproj/                  # Xcode project
-├── gateway_test/                       # PC gateway (Python)
+├── gateway/                       # PC gateway (Python)
 │   ├── freed_bridge.py                 # JSON → FreeD bridge
 │   ├── dashboard.py                    # Live web dashboard (Dash/Plotly)
 │   ├── udp_receiver.py                 # Simple JSON sniffer for testing
@@ -68,7 +68,7 @@ OBTrack/
 **Ubuntu (recommended — auto-installs as systemd services):**
 
 ```bash
-cd OBTrack/gateway_test
+cd OBTrack/gateway
 sudo FREED_HOST=<unreal-pc-ip> FREED_PRESET=unreal bash setup_ubuntu.sh
 ```
 
@@ -78,7 +78,7 @@ Dashboard at `http://<server-ip>:8050`.
 **Mac / Windows / ad-hoc:**
 
 ```bash
-cd gateway_test
+cd gateway
 pip3 install -r requirements.txt
 
 # terminal 1 — bridge: JSON → FreeD (also mirrors JSON to :5006 for the dashboard)

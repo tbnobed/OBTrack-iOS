@@ -21,7 +21,7 @@ CineCameraActor in the level
 ## 1. Start the bridge on the PC
 
 ```bash
-cd OBTrack/gateway_test
+cd OBTrack/gateway
 python3 freed_bridge.py --preset unreal
 ```
 

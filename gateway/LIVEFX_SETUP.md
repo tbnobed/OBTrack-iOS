@@ -21,7 +21,7 @@ Tracked CG camera in the scene
 Default (LiveFX running on the same machine):
 
 ```bash
-cd OBTrack/gateway_test
+cd OBTrack/gateway
 python3 freed_bridge.py --preset livefx
 ```
 
