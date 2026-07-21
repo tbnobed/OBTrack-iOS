@@ -429,6 +429,7 @@ def main():
     count = 0
     last_log = time.time()
     last_profile = None    # tracks profile-name changes for logging
+    last_trim = {}         # tracks phone-trim changes for logging
 
     try:
         while True:
@@ -446,10 +447,38 @@ def main():
                 (rot["qx"], rot["qy"], rot["qz"], rot["qw"]),
             )
 
+            # Phone-side live trim (optional "trim" object in the packet).
+            # Set from the iPhone app's Live Trim screen — no bridge restart
+            # or CLI flags needed. Flips first, then all additive offsets.
+            trim = pkt.get("trim") or {}
+            if not isinstance(trim, dict):
+                trim = {}
+            if trim != last_trim:
+                if trim:
+                    active = {k: v for k, v in trim.items() if v}
+                    print(f"  ⟲ phone trim updated: {active or '(neutral)'}")
+                else:
+                    print("  ⟲ phone trim cleared")
+                last_trim = trim
+            if trim.get("flipPan"):  yaw   = -yaw
+            if trim.get("flipTilt"): pitch = -pitch
+            if trim.get("flipRoll"): roll  = -roll
+            if trim.get("flipX"): ue_x = -ue_x
+            if trim.get("flipY"): ue_y = -ue_y
+            if trim.get("flipZ"): ue_z = -ue_z
+
             # Apply gateway-side phone-offset override (FreeD axes, metres).
             ue_x += args.phone_offset_x
             ue_y += args.phone_offset_y
             ue_z += args.phone_offset_z
+
+            # Phone-side position nudges (metres, FreeD axes, after flips).
+            try:
+                ue_x += float(trim.get("offsetX", 0) or 0)
+                ue_y += float(trim.get("offsetY", 0) or 0)
+                ue_z += float(trim.get("offsetZ", 0) or 0)
+            except (TypeError, ValueError):
+                pass
 
             # Lens raw values: JSON packet fields win over CLI statics.
             # (Ready for a future lens-encoder feed, e.g. the ESP32 add-on.)

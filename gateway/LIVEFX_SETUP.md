@@ -123,32 +123,31 @@ automatically, no restart needed.
 ## 6. Calibrating axes & rotation
 
 If position or rotation looks mirrored / rotated 90°, that is expected:
-ARKit, Unreal and LiveFX all use different conventions. Two ways to fix:
+ARKit, Unreal and LiveFX all use different conventions. Fix it in this
+order:
 
-- **Inside LiveFX** — most FreeD source panels expose per‑axis invert
-  toggles (Invert Pan / Tilt / Roll, Mirror X / Y / Z). Try those first;
-  they survive across bridge restarts.
-- **In the bridge** — open `freed_bridge.py` and change the calibration
-  knobs near the top:
+- **On the iPhone (recommended)** — tap **Live Trim** in the OBTrack app
+  (below Start/Stop). It has Invert Pan / Tilt / Roll, Mirror X / Y / Z,
+  and per‑axis position nudges in cm. Changes ride inside every packet
+  and take effect on the next frame — no bridge restart, no server
+  access. Settings are saved on the phone and survive app restarts.
+- **Inside LiveFX** — most FreeD source panels also expose per‑axis
+  invert toggles (Invert Pan / Tilt / Roll, Mirror X / Y / Z).
+- **In the bridge** (last resort, normally never needed) — the sign
+  constants near the top of `freed_bridge.py` (`YAW_SIGN`, `PITCH_SIGN`,
+  `ROLL_SIGN`). Do NOT edit the matrix maths underneath.
 
-  ```python
-  EULER_ORDER = "ZYX"
-  YAW_SIGN    = 1
-  PITCH_SIGN  = 1
-  ROLL_SIGN   = 1
-  ```
-
-  Flip individual sign constants between `+1` and `-1` until movement in
-  LiveFX matches the iPhone. Do NOT edit the matrix maths underneath.
-
-A simple calibration drill:
+A simple calibration drill (all from the phone):
 
 1. Place the iPhone flat on a table, screen up, top edge pointing away
    from you. Press Start.
 2. Note the CG camera's resting orientation in LiveFX.
 3. Slowly **yaw** the iPhone left — the CG camera should yaw the same
-   direction. If not, flip `YAW_SIGN`.
-4. Repeat for **pitch** (nose up/down) and **roll** (lean left/right).
+   direction. If not, open **Live Trim** and turn on **Invert pan**.
+4. Repeat for **pitch** (nose up/down → Invert tilt) and **roll**
+   (lean left/right → Invert roll).
+5. Walk right / forward / crouch — if the CG camera moves the wrong way
+   on an axis, turn on the matching **Mirror X / Y / Z** toggle.
 
 ## 7. Running the dashboard alongside LiveFX
 

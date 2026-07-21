@@ -91,8 +91,12 @@ The bridge uses this default mapping (ARKit → Unreal):
 | +Y right    | ARKit +X |
 | +Z up       | ARKit +Y |
 
-Two easy ways to adjust without editing Python:
+Three easy ways to adjust without editing Python:
 
+- **On the iPhone (recommended)** — tap **Live Trim** in the OBTrack app
+  (below Start/Stop): Invert Pan / Tilt / Roll, Mirror X / Y / Z, and
+  per‑axis position nudges in cm. Applies on the next frame, works
+  mid‑take, and is remembered by the phone — no bridge restart needed.
 - On the **Live Link Controller** component, toggle the individual
   **Use Rotation X / Y / Z** or **Use Location X / Y / Z** axes.
 - Parent the CineCameraActor to an empty actor and rotate the parent

@@ -22,6 +22,46 @@ struct Rotation: Codable {
     var qw: Float
 }
 
+// MARK: - Output trim
+
+/// Live output adjustments made on the phone and applied by the gateway
+/// bridge in the FreeD output frame (X = right, Y = forward, Z = up).
+/// Sent inside every packet, so the operator never has to touch the
+/// server — flips and nudges take effect on the next frame.
+struct TrimSettings: Codable, Equatable {
+    // Rotation inverts (bridge negates the angle after conversion)
+    var flipPan:  Bool = false
+    var flipTilt: Bool = false
+    var flipRoll: Bool = false
+    // Position mirrors (bridge negates the axis after conversion)
+    var flipX: Bool = false
+    var flipY: Bool = false
+    var flipZ: Bool = false
+    // Additive nudges, metres in FreeD axes (applied after mirroring)
+    var offsetX: Float = 0
+    var offsetY: Float = 0
+    var offsetZ: Float = 0
+
+    static let identity = TrimSettings()
+    var isIdentity: Bool { self == TrimSettings.identity }
+
+    // -- Persistence ---------------------------------------------------------
+    private static let defaultsKey = "OBTrack.trimSettings"
+
+    static func loadFromDefaults() -> TrimSettings {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let t = try? JSONDecoder().decode(TrimSettings.self, from: data)
+        else { return .identity }
+        return t
+    }
+
+    func saveToDefaults() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+        }
+    }
+}
+
 // MARK: - Main Packet
 
 /// The JSON packet sent via UDP for every tracking frame.
@@ -43,6 +83,9 @@ struct TrackingPacket: Codable {
     /// Name of the active calibration profile, or nil for raw pose.
     /// Downstream tools log this so a take can be tied back to a known rig.
     var profile: String? = nil
+    /// Live output trim set on the phone; nil when everything is neutral.
+    /// The gateway bridge applies it to the FreeD output each frame.
+    var trim: TrimSettings? = nil
 
     /// Serialize the packet to UTF-8 encoded JSON Data.
     func toJSONData() -> Data? {

@@ -35,6 +35,8 @@ struct ContentView: View {
     @State private var showSettings: Bool = true
     /// Calibration wizard sheet
     @State private var showCalibration: Bool = false
+    /// Live trim sheet (axis flips + nudges, works while streaming)
+    @State private var showTrim: Bool = false
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     private var isLandscape: Bool { verticalSizeClass == .compact }
@@ -51,6 +53,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showCalibration) {
             CalibrationView(tracker: tracker)
+        }
+        .sheet(isPresented: $showTrim) {
+            TrimView(tracker: tracker)
         }
     }
 
@@ -247,28 +252,44 @@ struct ContentView: View {
         .cornerRadius(10)
     }
 
-    /// Start / Stop buttons
+    /// Start / Stop buttons + live trim access (works in both orientations)
     private var controlButtons: some View {
-        HStack(spacing: 10) {
-            Button(action: startTracking) {
-                Label("Start", systemImage: "dot.radiowaves.left.and.right")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .font(.callout.bold())
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.green)
-            .disabled(tracker.isTracking)
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Button(action: startTracking) {
+                    Label("Start", systemImage: "dot.radiowaves.left.and.right")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .font(.callout.bold())
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .disabled(tracker.isTracking)
 
-            Button(action: stopTracking) {
-                Label("Stop", systemImage: "stop.circle")
+                Button(action: stopTracking) {
+                    Label("Stop", systemImage: "stop.circle")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .font(.callout.bold())
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(!tracker.isTracking)
+            }
+
+            Button {
+                showTrim = true
+            } label: {
+                Label(tracker.trim.isIdentity
+                      ? "Live Trim"
+                      : "Live Trim — active",
+                      systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     .font(.callout.bold())
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .disabled(!tracker.isTracking)
+            .buttonStyle(.bordered)
+            .tint(tracker.trim.isIdentity ? .white : BrandColor.accent)
         }
     }
 

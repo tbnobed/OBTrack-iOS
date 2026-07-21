@@ -33,6 +33,11 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
     /// when nil the raw ARKit pose is broadcast unchanged.
     @Published private(set) var activeProfile: CalibrationProfile? = nil
 
+    /// Live output trim (axis flips + position nudges). Set from TrimView,
+    /// persisted to UserDefaults, and sent inside every UDP packet so the
+    /// gateway applies it without any server-side action.
+    @Published private(set) var trim: TrimSettings = .identity
+
     /// Latest raw ARKit position, updated every frame on main. Used by the
     /// calibration wizard to capture poses on a button tap.
     @Published private(set) var latestRawPositionVec: SIMD3<Float>? = nil
@@ -47,6 +52,9 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
     /// Mirror of `activeProfile`, owned by `sessionQueue`. Read every frame to
     /// avoid touching @Published off-main. Updated via `sessionQueue.async`.
     private var sessionProfile: CalibrationProfile? = nil
+
+    /// Mirror of `trim`, owned by `sessionQueue` (same pattern as above).
+    private var sessionTrim: TrimSettings = .identity
 
     /// Dedicated serial queue for the ARSession delegate. Keeping per-frame
     /// work off the main thread frees SwiftUI to render smoothly.
@@ -92,6 +100,9 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
            let p = ProfileStore.shared.list().first(where: { $0.name == name }) {
             setActiveProfile(p)
         }
+
+        // Restore live trim from the previous session.
+        setTrim(TrimSettings.loadFromDefaults())
     }
 
     // MARK: - Calibration
@@ -102,6 +113,16 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
         UserDefaults.standard.activeProfileName = profile?.name
         sessionQueue.async { [weak self] in
             self?.sessionProfile = profile
+        }
+    }
+
+    /// Update the live output trim. Safe to call from main; takes effect on
+    /// the next outgoing packet — including mid-take.
+    func setTrim(_ newTrim: TrimSettings) {
+        trim = newTrim
+        newTrim.saveToDefaults()
+        sessionQueue.async { [weak self] in
+            self?.sessionTrim = newTrim
         }
     }
 
@@ -236,7 +257,8 @@ final class ARTrackingManager: NSObject, ObservableObject, ARSessionDelegate {
                 position: pos,
                 rotation: rot,
                 trackingState: stateString,
-                profile: profName
+                profile: profName,
+                trim: sessionTrim.isIdentity ? nil : sessionTrim
             )
             if let data = packet.toJSONData() {
                 udpClient.send(data)

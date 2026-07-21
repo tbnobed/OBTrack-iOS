@@ -18,6 +18,7 @@
                 AA000009000000000000001A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000009000000000000000A /* Assets.xcassets */; };
                 AA00000A000000000000001A /* Calibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000A000000000000000A /* Calibration.swift */; };
                 AA00000B000000000000001A /* CalibrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000B000000000000000A /* CalibrationView.swift */; };
+                AA00000C000000000000001A /* TrimView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000C000000000000000A /* TrimView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
                 AA000009000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
                 AA00000A000000000000000A /* Calibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Calibration.swift; sourceTree = "<group>"; };
                 AA00000B000000000000000A /* CalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationView.swift; sourceTree = "<group>"; };
+                AA00000C000000000000000A /* TrimView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrimView.swift; sourceTree = "<group>"; };
                 AA0000FF000000000000000A /* OBTrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OBTrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -66,6 +68,7 @@
                                 AA000008000000000000000A /* BrandMark.swift */,
                                 AA00000A000000000000000A /* Calibration.swift */,
                                 AA00000B000000000000000A /* CalibrationView.swift */,
+                                AA00000C000000000000000A /* TrimView.swift */,
                                 AA000009000000000000000A /* Assets.xcassets */,
                                 AA000006000000000000000A /* Info.plist */,
                         );
@@ -158,6 +161,7 @@
                                 AA000008000000000000001A /* BrandMark.swift in Sources */,
                                 AA00000A000000000000001A /* Calibration.swift in Sources */,
                                 AA00000B000000000000001A /* CalibrationView.swift in Sources */,
+                                AA00000C000000000000001A /* TrimView.swift in Sources */,
                         );
                         runOnlyForDeploymentPostprocessing = 0;
                 };
