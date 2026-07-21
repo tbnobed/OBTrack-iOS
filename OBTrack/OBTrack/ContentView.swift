@@ -38,6 +38,10 @@ struct ContentView: View {
     /// Live trim sheet (axis flips + nudges, works while streaming)
     @State private var showTrim: Bool = false
 
+    /// Visible build tag — shown in the status panel so it is always obvious
+    /// which version of the app is installed on the phone. Bump when pulling.
+    static let buildTag = "2026-07-21 · Live Trim"
+
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
@@ -326,6 +330,14 @@ struct ContentView: View {
                                      : BrandColor.accent)
                     .lineLimit(1)
                     .truncationMode(.middle)
+            }
+            HStack {
+                Text("Build").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Text(ContentView.buildTag)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1)
             }
         }
         .padding(10)
