@@ -18,13 +18,14 @@ struct ContentView: View {
 
     @StateObject private var tracker = ARTrackingManager()
 
-    @State private var destinationIP: String   = "192.168.1.100"
-    @State private var destinationPort: String = "5005"
-    @State private var sendRate: Int           = 30
+    // Persisted across launches — the app remembers the last server used.
+    @AppStorage("OBTrack.destinationIP")   private var destinationIP: String   = "192.168.1.100"
+    @AppStorage("OBTrack.destinationPort") private var destinationPort: String = "5005"
+    @AppStorage("OBTrack.sendRate")        private var sendRate: Int           = 30
 
     /// Lite (shooting) mode — disables LiDAR mesh + depth to avoid thermal
-    /// throttling during long takes. Stream pose only.
-    @State private var liteMode: Bool = false
+    /// throttling during long takes. Stream pose only. Persisted.
+    @AppStorage("OBTrack.liteMode") private var liteMode: Bool = false
 
     /// Whether the depth heat-map overlay is active
     @State private var showDepth: Bool = true

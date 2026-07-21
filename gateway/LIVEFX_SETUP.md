@@ -48,13 +48,15 @@ You should see, once per second:
 The exact menu wording can vary slightly between LiveFX versions, but the
 shape is the same in all recent releases:
 
-1. Open the **Tracking** (sometimes **Camera Tracking** / **External
-   Tracking**) panel.
-2. **Add Source → FreeD** (or "FreeD over UDP").
+1. Open **Live FX Settings → Live Links Manager** (older versions:
+   **Tracking** / **Camera Tracking** panel).
+2. Select **FreeD Tracker** and switch it **On** (or **Add Source →
+   FreeD**).
 3. Configure:
    - **Listen IP**: `0.0.0.0` (any interface) or the PC's LAN IP
    - **Listen Port**: `6301` (must match `--out-port` in step 1)
-   - **Camera ID**: `1` (must match `--camera-id`, default 1)
+   - **Tracker / Camera ID**: `1` (must match `--camera-id`, default 1)
+   - **Encoder**: `Generic` — we send standard FreeD D1 packets
 4. Save / Apply. The source should immediately show an incoming packet
    rate of ~30 Hz with a green status indicator.
 
@@ -63,11 +65,62 @@ shape is the same in all recent releases:
 1. In LiveFX's scene / shot setup, select the camera you want to drive.
 2. Set its **Tracking Source** to the FreeD source you just added.
 3. Enable **Use Position** and **Use Rotation**. Leave **Use Lens** /
-   **Use Focal Length** off — we are not sending lens metadata yet.
+   **Use Focal Length** off unless you have set up lens mapping (see
+   section 5 below).
 
 Move the iPhone — the CG camera should follow in real time.
 
-## 4. Calibrating axes & rotation
+## 4. If positions are off by exactly 10×
+
+FreeD implementations split into two camps on position units:
+
+| Convention | Units | Used by |
+|---|---|---|
+| BBC / Mo-Sys (original spec) | 64 per mm | Unreal Live Link FreeD, most trackers — **our default** |
+| Vizrt | 640 per mm | Vizrt Tracking Hub, some PTZ cameras |
+
+If moving the iPhone 1 m moves the CG camera 10 m (or 10 cm), the two
+sides disagree. Fix on the bridge side:
+
+```bash
+python3 freed_bridge.py --preset livefx --pos-scale 640
+```
+
+The startup banner prints which scale is active. Angles are never
+affected — every implementation agrees on degrees × 32768.
+
+## 5. Lens data & LiveFX camera calibration
+
+**What FreeD can carry:** 8 axes — pan, tilt, roll, X, Y, Z, plus two
+*raw* lens-encoder counters (zoom, focus). FreeD has **no** fields for
+focal length, film back, distortion or nodal offset — those are always
+configured inside LiveFX itself.
+
+**What LiveFX needs from you (inside LiveFX, one-time):**
+
+- **Film back / sensor size** of the virtual camera — set it to match
+  the cinema camera you are compositing for.
+- **Focal length** — set manually per lens, or derived via LiveFX's
+  built-in **Virtual Camera Calibration** (Live FX Studio), which also
+  solves **lens distortion** and **nodal-point offset** from a chart.
+  See Assimilate's tutorial: assimilateinc.com/camera-calibration-lfx
+- **Nodal offset** — the FreeD position we send is the *lens entrance
+  pupil* if you filled in the phone→lens offset in the OBTrack
+  calibration wizard; otherwise it is the phone body. Small residual
+  offsets can be zeroed with LiveFX's tracker offset fields.
+
+**What the bridge can send (optional):** raw zoom/focus values for
+LiveFX's lens mapping table. With a fixed prime lens, send constants:
+
+```bash
+python3 freed_bridge.py --preset livefx --zoom 2048 --focus 2048
+```
+
+If a future lens encoder feeds the gateway, JSON packets may include
+`"zoom"` and `"focus"` fields — they override the static flags
+automatically, no restart needed.
+
+## 6. Calibrating axes & rotation
 
 If position or rotation looks mirrored / rotated 90°, that is expected:
 ARKit, Unreal and LiveFX all use different conventions. Two ways to fix:
@@ -97,7 +150,7 @@ A simple calibration drill:
    direction. If not, flip `YAW_SIGN`.
 4. Repeat for **pitch** (nose up/down) and **roll** (lean left/right).
 
-## 5. Running the dashboard alongside LiveFX
+## 7. Running the dashboard alongside LiveFX
 
 Only one program can bind UDP 5005, so let the bridge listen and have it
 mirror the raw JSON to a second port for the dashboard:
@@ -110,7 +163,7 @@ python3 freed_bridge.py --preset livefx --forward-port 5006
 python3 dashboard.py --udp-port 5006
 ```
 
-## 6. Network checklist
+## 8. Network checklist
 
 - iPhone and PC on the same Wi‑Fi network (or USB-tethered).
 - iPhone app: **Host IP** = the PC's IP, **Port** = `5005`.

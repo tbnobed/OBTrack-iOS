@@ -171,23 +171,34 @@ def pack_uint24_be(value):
 
 
 # ---------------------------------------------------------------------------
-# FreeD D1 packet (29 bytes) — unchanged scaling/checksum
+# FreeD D1 packet (29 bytes)
 # ---------------------------------------------------------------------------
+# Angles: every implementation agrees — degrees × 32768 (15 fractional bits).
 ANGLE_SCALE = 32768.0          # FreeD units per degree
-POS_SCALE_PER_M = 64_000.0     # FreeD units per metre (1 mm = 64 units)
+#
+# Position: the FreeD ecosystem split into two camps:
+#   * 64  units/mm — original BBC / Mo-Sys spec (1/64 mm resolution,
+#                    ±131 m range).  Unreal Live Link FreeD default.
+#   * 640 units/mm — Vizrt Tracking Hub & several PTZ vendors
+#                    (1/640 mm resolution, ±13.1 m range).
+# If the consumer uses the other convention, positions are off by exactly
+# 10×.  Select with --pos-scale; default is the BBC/Mo-Sys 64 units/mm.
+POS_UNITS_PER_MM_DEFAULT = 64
 
 
 def build_freed_packet(camera_id, pan_deg, tilt_deg, roll_deg,
-                       x_m, y_m, z_m, zoom=0, focus=0):
+                       x_m, y_m, z_m, zoom=0, focus=0,
+                       pos_units_per_mm=POS_UNITS_PER_MM_DEFAULT):
+    pos_scale_per_m = pos_units_per_mm * 1000.0   # units per metre
     pkt = bytearray()
     pkt.append(0xD1)
     pkt.append(camera_id & 0xFF)
     pkt += pack_int24_be(pan_deg  * ANGLE_SCALE)
     pkt += pack_int24_be(tilt_deg * ANGLE_SCALE)
     pkt += pack_int24_be(roll_deg * ANGLE_SCALE)
-    pkt += pack_int24_be(x_m * POS_SCALE_PER_M)
-    pkt += pack_int24_be(y_m * POS_SCALE_PER_M)
-    pkt += pack_int24_be(z_m * POS_SCALE_PER_M)
+    pkt += pack_int24_be(x_m * pos_scale_per_m)
+    pkt += pack_int24_be(y_m * pos_scale_per_m)
+    pkt += pack_int24_be(z_m * pos_scale_per_m)
     pkt += pack_uint24_be(zoom)
     pkt += pack_uint24_be(focus)
     pkt += b"\x00\x00"
@@ -298,7 +309,32 @@ def main():
                         "object like '{\"out_host\":\"192.168.1.50\",\"out_port\":6301}' "
                         "to change the FreeD destination without restarting. "
                         "Set to 0 to disable. (default 5007)")
+    p.add_argument("--pos-scale", type=int, choices=(64, 640),
+                   default=int(os.environ.get("POS_SCALE",
+                                              POS_UNITS_PER_MM_DEFAULT)),
+                   help="FreeD position units per millimetre. 64 = original "
+                        "BBC/Mo-Sys spec (Unreal default). 640 = Vizrt "
+                        "convention. If positions in the target app are off "
+                        "by exactly 10x, switch this. (default 64)")
+    p.add_argument("--zoom", type=int,
+                   default=int(os.environ.get("FREED_ZOOM", 0)),
+                   help="Static raw zoom encoder value (0-16777215) placed "
+                        "in the FreeD zoom field. LiveFX/Unreal map this "
+                        "through their lens calibration. Overridden by a "
+                        "'zoom' field in incoming JSON packets. (default 0)")
+    p.add_argument("--focus", type=int,
+                   default=int(os.environ.get("FREED_FOCUS", 0)),
+                   help="Static raw focus encoder value (0-16777215) placed "
+                        "in the FreeD focus field. Overridden by a 'focus' "
+                        "field in incoming JSON packets. (default 0)")
     args = p.parse_args()
+
+    # argparse skips `choices` validation for non-string defaults, so a
+    # POS_SCALE env var like 100 would slip through — reject it here.
+    if args.pos_scale not in (64, 640):
+        print(f"[ERROR] --pos-scale / POS_SCALE must be 64 or 640, "
+              f"got {args.pos_scale}", file=sys.stderr)
+        sys.exit(1)
 
     preset_host, preset_port, preset_label = PRESETS[args.preset]
     out_host = args.out_host or preset_host
@@ -371,6 +407,11 @@ def main():
     if args.control_port > 0:
         print(f"  Control port     : 0.0.0.0:{args.control_port}  "
               "(send JSON {out_host, out_port} to retarget live)")
+    print(f"  Position scale   : {args.pos_scale} units/mm "
+          f"({'BBC/Mo-Sys spec' if args.pos_scale == 64 else 'Vizrt convention'})")
+    if args.zoom or args.focus:
+        print(f"  Lens raw values  : zoom={args.zoom}  focus={args.focus}  "
+              "(static, overridden by JSON 'zoom'/'focus')")
     print(f"  Euler order      : {EULER_ORDER}  "
           f"(rot signs Y/P/R = {YAW_SIGN:+d}/{PITCH_SIGN:+d}/{ROLL_SIGN:+d})")
     print(f"  Position signs   : X/Y/Z = "
@@ -410,8 +451,18 @@ def main():
             ue_y += args.phone_offset_y
             ue_z += args.phone_offset_z
 
+            # Lens raw values: JSON packet fields win over CLI statics.
+            # (Ready for a future lens-encoder feed, e.g. the ESP32 add-on.)
+            try:
+                zoom_raw  = int(pkt.get("zoom",  args.zoom))
+                focus_raw = int(pkt.get("focus", args.focus))
+            except (TypeError, ValueError):
+                zoom_raw, focus_raw = args.zoom, args.focus
+
             freed = build_freed_packet(
-                args.camera_id, yaw, pitch, roll, ue_x, ue_y, ue_z)
+                args.camera_id, yaw, pitch, roll, ue_x, ue_y, ue_z,
+                zoom=zoom_raw, focus=focus_raw,
+                pos_units_per_mm=args.pos_scale)
             with target_lock:
                 dst = (target["host"], target["port"])
             out_sock.sendto(freed, dst)
