@@ -94,6 +94,7 @@ struct CalibrationView: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .always))
                 .indexViewStyle(.page(backgroundDisplayStyle: .always))
+                navButtons
             }
             .background(BrandColor.inkDark.ignoresSafeArea())
             .toolbar {
@@ -115,6 +116,44 @@ struct CalibrationView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Step navigation
+
+    /// Explicit Back / Next buttons — swiping between cards also works, but
+    /// buttons are reliable even with the keyboard open or a scrolled card.
+    private var navButtons: some View {
+        HStack {
+            Button {
+                withAnimation { stepIndex = max(0, stepIndex - 1) }
+            } label: {
+                Label("Back", systemImage: "chevron.left")
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
+            }
+            .buttonStyle(.bordered)
+            .tint(.white)
+            .disabled(stepIndex == 0)
+
+            Spacer()
+
+            Button {
+                withAnimation { stepIndex = min(4, stepIndex + 1) }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(stepIndex == 3 ? "Next: Save" : "Next")
+                    Image(systemName: "chevron.right")
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 4)
+                .font(.callout.bold())
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BrandColor.accent)
+            .disabled(stepIndex == 4)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
     }
 
     // MARK: - Header
@@ -411,6 +450,9 @@ private struct StepCard<Content: View>: View {
             }
             .padding(20)
         }
+        // Drag the card down to tuck the keyboard away — the decimal pad has
+        // no Return key, so without this it can cover the nav buttons.
+        .scrollDismissesKeyboard(.interactively)
     }
 }
 
