@@ -149,6 +149,24 @@ A simple calibration drill (all from the phone):
 5. Walk right / forward / crouch — if the CG camera moves the wrong way
    on an axis, turn on the matching **Mirror X / Y / Z** toggle.
 
+### If up/down and forward/back are SWAPPED (not just inverted)
+
+LiveFX's own 3D scene is **Y‑up / Z‑depth**, while FreeD packets carry
+**Y = forward, Z = up**. Normally LiveFX's FreeD reader converts between
+the two. If yours reads the packet literally, you'll see this exact
+symptom: raising the phone moves the CG camera in **depth**, and walking
+forward changes its **height** — while left/right stays correct. Mirror
+toggles can't fix a swap; restart the bridge with the swap flag instead:
+
+```bash
+python3 freed_bridge.py --preset livefx --swap-yz
+```
+
+(or set env `SWAP_YZ=1`). The startup banner prints
+`Axis remap : Y/Z SWAPPED` when active. Then redo the walk‑right /
+walk‑forward / crouch check — use Mirror toggles for any remaining
+simple inversions.
+
 ## 7. Running the dashboard alongside LiveFX
 
 Only one program can bind UDP 5005, so let the bridge listen and have it

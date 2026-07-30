@@ -253,6 +253,21 @@ PRESETS = {
 }
 
 
+def _env_bool(name):
+    """Parse a boolean env var. Accepts 1/true/yes/on and 0/false/no/off
+    (any case, surrounding whitespace ignored). Unset/empty = False;
+    anything else is rejected loudly rather than silently enabling."""
+    raw = os.environ.get(name, "")
+    val = raw.strip().lower()
+    if val in ("", "0", "false", "no", "off"):
+        return False
+    if val in ("1", "true", "yes", "on"):
+        return True
+    print(f"[ERROR] {name} must be one of 1/true/yes/on or 0/false/no/off, "
+          f"got {raw!r}", file=sys.stderr)
+    sys.exit(1)
+
+
 def main():
     p = argparse.ArgumentParser(
         description="OBTrack JSON → FreeD bridge (Unreal Engine, "
@@ -309,6 +324,17 @@ def main():
                         "object like '{\"out_host\":\"192.168.1.50\",\"out_port\":6301}' "
                         "to change the FreeD destination without restarting. "
                         "Set to 0 to disable. (default 5007)")
+    p.add_argument("--swap-yz", action="store_true",
+                   default=_env_bool("SWAP_YZ"),
+                   help="Swap the FreeD Y (forward) and Z (up) position "
+                        "fields before sending. Use when the target app "
+                        "reads the packet literally into a Y-up scene "
+                        "(e.g. some Assimilate LiveFX setups), i.e. when "
+                        "walking forward wrongly changes height and "
+                        "crouching wrongly changes depth — the swap "
+                        "restores the correct mapping. Rotation is "
+                        "unaffected. Also set by env SWAP_YZ=1. "
+                        "(default off)")
     p.add_argument("--pos-scale", type=int, choices=(64, 640),
                    default=int(os.environ.get("POS_SCALE",
                                               POS_UNITS_PER_MM_DEFAULT)),
@@ -407,6 +433,9 @@ def main():
     if args.control_port > 0:
         print(f"  Control port     : 0.0.0.0:{args.control_port}  "
               "(send JSON {out_host, out_port} to retarget live)")
+    if args.swap_yz:
+        print("  Axis remap       : Y/Z SWAPPED (Y-up consumer mode — "
+              "FreeD Y field carries height, Z carries depth)")
     print(f"  Position scale   : {args.pos_scale} units/mm "
           f"({'BBC/Mo-Sys spec' if args.pos_scale == 64 else 'Vizrt convention'})")
     if args.zoom or args.focus:
@@ -446,6 +475,12 @@ def main():
                 (pos["x"], pos["y"], pos["z"]),
                 (rot["qx"], rot["qy"], rot["qz"], rot["qw"]),
             )
+
+            # Optional Y/Z swap for Y-up consumers (e.g. LiveFX reading the
+            # packet literally). Done FIRST so every downstream knob (trim
+            # flips, offsets) operates in the final output frame.
+            if args.swap_yz:
+                ue_y, ue_z = ue_z, ue_y
 
             # Phone-side live trim (optional "trim" object in the packet).
             # Set from the iPhone app's Live Trim screen — no bridge restart
